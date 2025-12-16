@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-yellow: #FACC15;
+  --text-dark: #111827;
+  --red-price: #EF4444;
+  /* ...salin variabel lainnya dari style tag file HTML Anda... */
+}
