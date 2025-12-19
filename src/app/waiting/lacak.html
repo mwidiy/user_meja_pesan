@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="Lacak pesanan makanan dan minuman Anda secara real-time" />
+  <title>Lacak Pesanan</title>
+  <style>
+    :root {
+      --bg-page: #F9FAFB;
+      --bg-card: #FFFFFF;
+      --bg-header: #FFFFFF;
+      --text-main: #111827;
+      --text-sub: #6B7280;
+      --text-dark: #374151;
+      --primary-yellow: #F0C419;
+      --primary-yellow-soft: #FFFBEB;
+      --primary-orange: #F59E0B;
+      --primary-green: #22C55E;
+      --border-soft: #E5E7EB;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.10);
+      --shadow-footer: 0 -4px 12px rgba(0,0,0,0.08);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-pill: 9999px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: #FFFFFF;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .frame {
+      width: 100%;
+      max-width: 414px;
+      min-height: 100vh;
+      background-color: #FFFFFF;
+      border-radius: 8px;
+      border: 2px solid #CED4DA;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .body {
+      flex: 1;
+      background-color: var(--bg-page);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HEADER */
+    .header {
+      height: 60px;
+      background-color: var(--bg-header);
+      box-shadow: var(--shadow-xs);
+      display: flex;
+      align-items: center;
+      justify-content: center;          /* judul di tengah */
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 0 20px;
+    }
+
+    /* tombol back sebagai img di kiri, absolute supaya tidak menggeser judul */
+    .header .button {
+      position: absolute;
+      left: 20px;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      padding: 0;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* back pakai img dari aset kamu */
+    .header .button img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .header .text-wrapper {
+      font-weight: 600;
+      font-size: 18px;
+      padding-bottom: 148px; /* ruang untuk footer */
+      text-align: center;
+    }
+
+    /* top-right icon di header (gunakan <img> agar mudah diganti) */
+    .header .top-icon {
+      position: absolute;
+      right: 20px;
+      width: 36px;          /* diperbesar */
+      height: 36px;         /* diperbesar */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      z-index: 12;
+    }
+    .header .top-icon img {
+      width: 28px;          /* diperbesar */
+      height: 28px;         /* diperbesar */
+      object-fit: contain;
+      display: block;
+    }
+
+    /* MAIN LAYOUT */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 16px 0 24px; /* sedikit jarak vertikal, jauh lebih kecil */
+    }
+
+    /* KARTU STATUS UTAMA */
+    .div-2 {
+      margin: 24px auto 0;
+      width: 335px;
+      background-color: var(--bg-card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      padding-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .div-wrapper {
+      margin: 32px auto 0;
+      width: 271px;
+    }
+
+    .div-3 {
+      width: 208px;
+      height: 208px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .group-wrapper {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .group {
+      position: relative;
+      width: 208px;
+      height: 208px;
+    }
+
+    .group .img {
+      position: absolute;
+      top: -7px;
+      left: -7px;
+      width: 221px;
+      height: 221px;
+    }
+
+    .div-4 {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .div-5 {
+      margin-top: 54px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .text-wrapper-2 {
+      font-weight: 800;
+      font-size: 72px;
+      color: var(--text-main);
+      line-height: 1;
+    }
+
+    .div-6 {
+      display: flex;
+      justify-content: center;
+    }
+
+    .text-wrapper-3 {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-sub);
+    }
+
+    /* STEPPER STATUS */
+    .div-7 {
+      margin: 0 auto;
+      width: 271px;
+    }
+
+    .div-8 {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .div-9,
+    .div-11,
+    .div-15 {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .i-wrapper,
+    .div-12,
+    .div-16 {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-pill);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .i-wrapper {
+      background-color: var(--primary-green);
+    }
+
+    .div-12 {
+      background-color: var(--primary-yellow);
+    }
+
+    .div-16 {
+      background-color: #E5E7EB;
+    }
+
+    .text-wrapper-4,
+    .text-wrapper-5,
+    .text-wrapper-6 {
+      font-size: 12px;
+      line-height: 16px;
+      text-align: center;
+    }
+
+    .text-wrapper-4 {
+      color: #374151;
+    }
+
+    .text-wrapper-5 {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .text-wrapper-6 {
+      color: #9CA3AF;
+    }
+
+    .div-10,
+    .div-14 {
+      width: 44px;
+      height: 4px;
+      align-self: center;
+      border-radius: 999px;
+    }
+
+    .div-10 {
+      background-color: var(--primary-yellow);
+    }
+
+    .div-14 {
+      background-color: #E5E7EB;
+    }
+
+    /* ESTIMASI SELESAI */
+    .div-18 {
+      margin: 0 auto;
+      width: 271px;
+      height: 60px;
+      background-color: var(--primary-yellow-soft);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+    }
+
+    .i-4 {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .span {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-dark);
+    }
+
+    .span-2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* RINCIAN PESANAN */
+    .div-20 {
+      margin: 0 auto 24px;
+      width: 335px;
+      background-color: var(--bg-card);
+      border-radius: 16px;
+      box-shadow: var(--shadow-md);
+      padding-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .h-2 {
+      margin: 24px 24px 0;
+    }
+
+    .text-wrapper-9 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .order-list {
+      list-style: none;
+      margin: 16px 0 0;
+      padding: 0 24px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .div-21,
+    .div-25 {
+      width: 100%;
+      display: flex;
+    }
+
+    .div-22 {
+      display: flex;
+      gap: 16px;
+      width: 100%;
+    }
+
+    .gemini-generated {
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    .div-23 {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .div-24,
+    .div-26 {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .text-wrapper-10,
+    .text-wrapper-13 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .text-wrapper-11 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .text-wrapper-12 {
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    /* CATATAN KHUSUS */
+    .div-27 {
+      margin: 15px 24px 0;
+      padding: 12px 13px;
+      background-color: #FEFCE8;
+      border-radius: 12px;
+      border: 1px solid #FEF08A;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .i-5 {
+      width: 13px;
+      height: 20px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .div-29 {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .text-wrapper-14 {
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .p {
+      font-size: 12px;
+      color: #4B5563;
+    }
+
+    /* TOTAL PEMBAYARAN */
+    .div-30 {
+      margin: 14px 24px 0;
+      padding-top: 14px;
+      border-top: 1px solid #F3F4F6;
+    }
+
+    .div-31 {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .text-wrapper-15 {
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .text-wrapper-16 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* FOOTER ACTIONS */
+    .footer {
+      width: 100%;
+      max-width: 414px;
+      background-color: #FFFFFF;
+      box-shadow: var(--shadow-footer);
+      padding: 16px 20px 16px;
+    }
+
+    .div-32 {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .button-2,
+    .button-3,
+    .button-4 {
+      border-radius: 12px;
+      border: 2px solid #D1D5DB;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      height: 48px;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .button-2 {
+      flex: 1;
+    }
+
+    .button-3 {
+      flex: 1.1;
+    }
+
+    .button-2:hover,
+    .button-3:hover {
+      background-color: #F3F4F6;
+      transform: translateY(-1px);
+    }
+
+    .button-2:active,
+    .button-3:active {
+      transform: translateY(0);
+    }
+
+    .button-2 svg,
+    .button-3 svg,
+    .button-4 svg {
+      display: block;
+    }
+
+    .text-wrapper-17 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .text-wrapper-18 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #DC2626;
+    }
+
+    .button-4 {
+      width: 100%;
+      margin-top: 8px;
+      background-color: var(--primary-yellow);
+      border: none;
+      box-shadow: 0 10px 15px rgba(0,0,0,0.10), 0 4px 6px rgba(0,0,0,0.10);
+    }
+
+    .button-4:hover {
+      background-color: #E0B318;
+      transform: translateY(-2px);
+      box-shadow: 0 12px 20px rgba(0,0,0,0.16), 0 6px 8px rgba(0,0,0,0.16);
+    }
+
+    .button-4:active {
+      transform: translateY(0);
+    }
+
+    .text-wrapper-19 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* ACCESSIBILITY */
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="body">
+      <div class="div">
+        <header class="header">
+          <button class="button" type="button" aria-label="Kembali ke halaman sebelumnya" onclick="history.back()">
+            <!-- ganti src dengan icon back milikmu -->
+            <img src="./assets/kembali.svg" alt="Kembali">
+          </button>
+
+          <h1 class="text-wrapper">Lacak Pesanan</h1>
+
+          <!-- new top-right icon (gantikan src dengan icon WA mu) -->
+          <button class="top-icon" type="button" aria-label="Icon kanan atas" onclick="/* optional handler */">
+            <img src="./assets/wa.svg" alt="Icon">
+          </button>
+        </header>
+
+        <main class="main">
+          <!-- Kartu Status -->
+          <section class="div-2" aria-labelledby="order-status-heading">
+            <h2 id="order-status-heading" class="visually-hidden">Status Pesanan</h2>
+
+            <!-- Antrean Kamu -->
+            <div class="div-wrapper">
+              <div class="div-3">
+                <div class="group-wrapper" aria-hidden="true">
+                  <div class="group">
+                    <img class="img" src="./assets/Ring.svg" alt="" />
+                    <img class="img" src="./assets/Ring.svg" alt="" />
+                  </div>
+                </div>
+                <div class="div-4">
+                  <div class="div-5">
+                    <div class="text-wrapper-2" aria-label="3 pesanan dalam antrean">3</div>
+                  </div>
+                  <div class="div-6">
+                    <div class="text-wrapper-3">Antrean Kamu</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stepper -->
+            <div class="div-7">
+              <nav class="div-8" aria-label="Tahapan pesanan">
+                <div class="div-9">
+                  <div class="i-wrapper" aria-label="Pesanan diterima - selesai">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path
+                        class="vector-2"
+                        d="M4 10L8 14L16 6"
+                        stroke="white"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <div class="text-wrapper-4">Pesanan Diterima</div>
+                </div>
+
+                <div class="div-10" role="separator" aria-hidden="true"></div>
+
+                <div class="div-11">
+                  <div class="div-12" aria-label="Sedang disiapkan - dalam proses">
+                    <svg
+                      class="i-2"
+                      width="18"
+                      height="20"
+                      viewBox="0 0 18 20"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path d="M9 2L2 6V10C2 14.5 5 18 9 18C13 18 16 14.5 16 10V6L9 2Z" fill="white" />
+                    </svg>
+                  </div>
+                  <div class="text-wrapper-5">Sedang Disiapkan</div>
+                </div>
+
+                <div class="div-14" role="separator" aria-hidden="true"></div>
+
+                <div class="div-15">
+                  <div class="div-16" aria-label="Siap diantar - belum dimulai">
+                    <svg
+                      class="i-3"
+                      width="14"
+                      height="20"
+                      viewBox="0 0 14 20"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 8H10V2H4V8H2L7 13L12 8Z" fill="#9CA3AF" />
+                    </svg>
+                  </div>
+                  <div class="text-wrapper-6">Siap Diantar</div>
+                </div>
+              </nav>
+            </div>
+
+            <!-- Estimasi -->
+            <div class="div-18" role="status" aria-live="polite">
+              <svg
+                class="i-4"
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <circle cx="9" cy="9" r="8" stroke="#F59E0B" stroke-width="2" />
+                <path d="M9 5V9L12 12" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <span class="span">Estimasi Selesai:</span>
+              <span class="span-2">
+                <time class="text-wrapper-8" datetime="14:45">14:45 WIB</time>
+              </span>
+            </div>
+          </section>
+
+          <!-- Rincian Pesanan -->
+          <section class="div-20" aria-labelledby="order-details-heading">
+            <div class="h-2">
+              <h2 id="order-details-heading" class="text-wrapper-9">Rincian Pesanan</h2>
+            </div>
+
+            <ul class="order-list">
+              <li class="div-21">
+                <div class="div-22">
+                  <img
+                    class="gemini-generated"
+                    src="./assets/Nasi_Katsu.png"
+                    alt="Teh Manis"
+                  />
+                  <div class="div-23">
+                    <div class="div-24">
+                      <div class="text-wrapper-10">Teh Manis</div>
+                      <div class="text-wrapper-11" aria-label="Harga Rp 3.000">Rp 3.000</div>
+                    </div>
+                    <div class="text-wrapper-12" aria-label="Jumlah 1">1x</div>
+                  </div>
+                </div>
+              </li>
+
+              <li class="div-25">
+                <div class="div-22">
+                  <img
+                    class="gemini-generated"
+                    src="./assets/Nasi_Omelet.png"
+                    alt="Es Beng Beng"
+                  />
+                  <div class="div-23">
+                    <div class="div-26">
+                      <div class="text-wrapper-13">Es Beng Beng</div>
+                      <div class="text-wrapper-11" aria-label="Harga Rp 5.000">Rp 5.000</div>
+                    </div>
+                    <div class="text-wrapper-12" aria-label="Jumlah 1">1x</div>
+                  </div>
+                </div>
+              </li>
+            </ul>
+
+            <!-- Catatan -->
+            <div class="div-27">
+              <svg
+                class="i-5"
+                width="13"
+                height="20"
+                viewBox="0 0 13 20"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  d="M11 2H2C1.45 2 1 2.45 1 3V17C1 17.55 1.45 18 2 18H11C11.55 18 12 17.55 12 17V3C12 2.45 11.55 2 11 2ZM6.5 15.5C5.95 15.5 5.5 15.05 5.5 14.5C5.5 13.95 5.95 13.5 6.5 13.5C7.05 13.5 7.5 13.95 7.5 14.5C7.5 15.05 7.05 15.5 6.5 15.5Z"
+                  fill="#F59E0B"
+                />
+              </svg>
+              <div class="div-29">
+                <div class="text-wrapper-14">Catatan Khusus:</div>
+                <p class="p">Tambahkan es batu lebih banyak</p>
+              </div>
+            </div>
+
+            <!-- Total -->
+            <div class="div-30">
+              <div class="div-31">
+                <div class="text-wrapper-15">Total Pembayaran</div>
+                <div class="text-wrapper-16" aria-label="Total Rp 8.000">Rp 8.000</div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <div class="div-32">
+          <button class="button-2" type="button" aria-label="Beri masukan tentang pesanan" onclick="window.location.href='saran.html'">
+            <svg
+              class="i-6"
+              width="14"
+              height="17"
+              viewBox="0 0 14 17"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 1H2C1.45 1 1 1.45 1 2V12L4 9H12C12.55 9 13 8.55 13 8V2C13 1.45 12.55 1 12 1Z"
+                fill="#374151"
+              />
+            </svg>
+            <span class="text-wrapper-17">Beri Masukan</span>
+          </button>
+
+          <button class="button-3" type="button" aria-label="Batalkan pesanan">
+            <svg
+              class="i-7"
+              width="11"
+              height="17"
+              viewBox="0 0 11 17"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path
+                d="M8 3V2C8 1.45 7.55 1 7 1H4C3.45 1 3 1.45 3 2V3H1V4H2V13C2 13.55 2.45 14 3 14H8C8.55 14 9 13.55 9 13V4H10V3H8Z"
+                fill="#DC2626"
+              />
+            </svg>
+            <span class="text-wrapper-18">Batalkan Pesanan</span>
+          </button>
+        </div>
+
+        <button class="button-4" type="button" aria-label="Pesan menu lain" onclick="window.location.href='home.html'">
+          <svg
+            class="i-8"
+            width="14"
+            height="20"
+            viewBox="0 0 14 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path d="M7 2L2 7H5V12H9V7H12L7 2Z" fill="#111827" />
+          </svg>
+          <span class="text-wrapper-19">Pesan Menu Lain</span>
+        </button>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>

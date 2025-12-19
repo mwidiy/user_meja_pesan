@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pilih Metode Pembayaran</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+          rel="stylesheet">
+    <style>
+        :root {
+            --bg-page: #F4F5F8;
+            --card-bg: #FFFFFF;
+            --text-main: #111827;
+            --text-sub: #6B7280;
+            --border-soft: #E5E7EB;
+            --yellow: #FACC15;
+            --yellow-soft: #FEF3C7;
+            --red: #EF4444;
+            --blue-qris: #2563EB;
+        }
+        * {
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+            font-family:'Poppins',sans-serif;
+        }
+        body {
+            background:var(--bg-page);
+            min-height:100vh;
+        }
+        .page {
+            max-width:414px;
+            margin:0 auto;
+            min-height:100vh;
+            display:flex;
+            flex-direction:column;
+            padding:0 0 90px 0;
+            background:var(--bg-page);
+        }
+
+        /* HEADER */
+        .header {
+            height:64px;
+            background:#FFFFFF;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            position:sticky;
+            top:0;
+            z-index:10;
+            box-shadow:0 1px 0 rgba(15,23,42,0.06);
+        }
+        .back-btn {
+            position:absolute;
+            left:14px;
+            width:36px;
+            height:36px;
+            border-radius:999px;
+            border:none;
+            background:transparent;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            cursor:pointer;
+        }
+        .back-btn span {
+            font-size:1.4rem;
+            color:#111827;
+        }
+        .header-title {
+            font-size:1.25rem;
+            font-weight:700;
+            color:var(--text-main);
+        }
+
+        .content {
+            padding:16px 16px 0;
+            flex:1;
+        }
+
+        /* CARD RINGKASAN PESANAN */
+        .summary-card {
+            background:var(--card-bg);
+            border-radius:24px;
+            padding:18px 18px 16px;
+            box-shadow:0 8px 20px rgba(15,23,42,0.05);
+            margin-bottom:22px;
+        }
+        .summary-title {
+            font-size:1.1rem;
+            font-weight:700;
+            color:var(--text-main);
+            margin-bottom:14px;
+        }
+        .summary-row {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin:4px 0;
+            font-size:0.95rem;
+            color:var(--text-sub);
+        }
+        .summary-row.total-label {
+            margin-top:14px;
+            padding-top:10px;
+            border-top:1px solid var(--border-soft);
+            font-weight:700;
+            color:var(--text-main);
+        }
+        .summary-row .value {
+            font-weight:600;
+            color:var(--text-sub);
+        }
+        .summary-row.total-label .value {
+            color:var(--red);
+            font-size:1.05rem;
+        }
+
+        /* TITLE BLOCK */
+        .section-title {
+            font-weight:700;
+            color:var(--text-main);
+            font-size:1.05rem;
+            margin-bottom:12px;
+        }
+
+        /* METODE CARD LIST */
+        .method-list {
+            display:flex;
+            flex-direction:column;
+            gap:14px;
+        }
+        .method-card {
+            background:var(--card-bg);
+            border-radius:22px;
+            padding:14px 14px 12px;
+            display:flex;
+            gap:12px;
+            align-items:flex-start;
+            border:1px solid var(--border-soft);
+        }
+        .method-card.active {
+            border-color:#FCD34D;
+            box-shadow:0 10px 24px rgba(250,204,21,0.25);
+        }
+        .method-icon {
+            width:52px;
+            height:52px;
+            border-radius:18px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            flex-shrink:0;
+            overflow:hidden;
+        }
+        .method-icon.qris {
+            background:#1D4ED8; /* biru seperti gambar 1 */
+        }
+        .method-icon.cash {
+            background:#FEE2E2; /* merah muda seperti gambar 2 */
+        }
+        .method-icon img {
+            width:70%;
+            height:70%;
+            object-fit:contain;
+        }
+        .method-info {
+            flex:1;
+        }
+        .method-name {
+            font-weight:700;
+            font-size:1rem;
+            color:var(--text-main);
+            margin-bottom:2px;
+        }
+        .method-desc {
+            font-size:0.88rem;
+            color:var(--text-sub);
+            line-height:1.4;
+        }
+        .method-extra {
+            margin-top:10px;
+            display:flex;
+            align-items:center;
+            gap:6px;
+            font-size:0.83rem;
+            color:var(--text-sub);
+        }
+        .wallet-badges {
+            display:flex;
+            align-items:center;
+            gap:6px;
+        }
+        .wallet-logos-img {
+            height:18px;       /* sesuaikan dengan tinggi referensi */
+            width:auto;
+            object-fit:contain;
+            display:block;
+        }
+        .method-radio {
+            width:24px;
+            height:24px;
+            border-radius:999px;
+            border:2px solid #E5E7EB;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            flex-shrink:0;
+            margin-left:6px;
+        }
+        .method-card.active .method-radio {
+            border-color:#FACC15;
+        }
+        .method-radio-dot {
+            width:14px;
+            height:14px;
+            border-radius:999px;
+            background:#FACC15;
+            opacity:0;
+        }
+        .method-card.active .method-radio-dot {
+            opacity:1;
+        }
+        .method-time {
+            display:flex;
+            align-items:center;
+            gap:6px;
+            font-size:0.83rem;
+            color:var(--text-sub);
+            margin-top:10px;
+        }
+        .time-icon {
+            width:18px;
+            height:18px;
+            flex-shrink:0;
+        }
+        .time-icon img {
+            width:100%;
+            height:100%;
+            object-fit:contain;
+            display:block;
+        }
+
+        /* BOTTOM BAR */
+        .bottom-bar {
+            position:fixed;
+            left:50%;
+            transform:translateX(-50%);
+            bottom:0;
+            width:100%;
+            max-width:414px;
+            padding:10px 16px 18px;
+            background:#FFFFFF;
+            box-shadow:0 -6px 18px rgba(15,23,42,0.1);
+            box-sizing:border-box;
+        }
+        .bottom-total-row {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:12px;
+            font-size:0.96rem;
+            color:var(--text-sub);
+        }
+        .bottom-total-row strong {
+            font-weight:700;
+            color:var(--text-main);
+        }
+        .bottom-total-row .value {
+            font-weight:700;
+            font-size:1.05rem;
+            color:var(--red);
+        }
+        .primary-btn {
+            width:100%;
+            border:none;
+            border-radius:999px;
+            padding:14px 16px;
+            background:#FACC15;
+            color:#111827;
+            font-weight:700;
+            font-size:1rem;
+            cursor:pointer;
+            box-shadow:0 14px 26px rgba(250,204,21,0.55);
+        }
+        .ssl-row {
+            margin-top:8px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap:6px;
+            font-size:0.82rem;
+            color:#6B7280;
+        }
+        .ssl-dot {
+            width:14px;
+            height:14px;
+            border-radius:4px;
+            background:#16A34A;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <header class="header">
+        <button class="back-btn" id="btnBack"><span>←</span></button>
+        <h1 class="header-title">Pilih Metode Pembayaran</h1>
+    </header>
+
+    <main class="content">
+        <!-- Ringkasan Pesanan -->
+        <section class="summary-card">
+            <div class="summary-title">Ringkasan Pesanan</div>
+            <div class="summary-row">
+                <span>Subtotal</span>
+                <span class="value" id="subtotalText">Rp 0</span>
+            </div>
+            <div class="summary-row total-label">
+                <span>Total Pembayaran</span>
+                <span class="value" id="totalText">Rp 0</span>
+            </div>
+        </section>
+
+        <!-- Metode Pembayaran -->
+        <h2 class="section-title">Metode Pembayaran</h2>
+        <section class="method-list" id="methodList">
+            <!-- QRIS -->
+            <article class="method-card active" data-method="qris">
+                <div class="method-icon qris">
+                    <img src="./assets/Icon_Qris.svg" alt="QRIS">
+                </div>
+                <div class="method-info">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <div>
+                            <div class="method-name">QRIS</div>
+                            <div class="method-desc">
+                                Bayar langsung dari semua aplikasi e-wallet
+                            </div>
+                        </div>
+                        <div class="method-radio">
+                            <div class="method-radio-dot"></div>
+                        </div>
+                    </div>
+                    <div class="method-extra">
+                        <div class="wallet-badges">
+                            <img src="./assets/Icon_Ewallet.svg" alt="E-Wallet Logos" class="wallet-logos-img">
+                        </div>
+                        <span>+ Dana, GoPay, OVO, LinkAja, dan lainnya</span>
+                    </div>
+                </div>
+            </article>
+
+            <!-- Bayar di Kasir -->
+            <article class="method-card" data-method="cash">
+                <div class="method-icon cash">
+                    <img src="./assets/Icon_Kasir.svg" alt="Bayar di Kasir">
+                </div>
+                <div class="method-info">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <div>
+                            <div class="method-name">Bayar di Kasir</div>
+                            <div class="method-desc">
+                                Tunjukkan kode pesanan Anda di kasir
+                            </div>
+                        </div>
+                        <div class="method-radio">
+                            <div class="method-radio-dot"></div>
+                        </div>
+                    </div>
+                    <div class="method-time">
+                        <span class="time-icon">
+                            <img src="./assets/Icon_Jam.svg" alt="Waktu">
+                        </span>
+                        <span>Bayar dalam 15 menit setelah pesanan siap</span>
+                    </div>
+                </div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<!-- Bottom Bar -->
+<div class="bottom-bar">
+    <div class="bottom-total-row">
+        <span><strong>Total Pembayaran</strong></span>
+        <span class="value" id="bottomTotal">Rp 0</span>
+    </div>
+    <button class="primary-btn" id="btnContinue">Lanjutkan Pembayaran</button>
+    <div class="ssl-row">
+        <span class="ssl-dot"></span>
+        <span>Pembayaran dilindungi SSL</span>
+    </div>
+</div>
+
+<script>
+    const subtotalText = document.getElementById('subtotalText');
+    const totalText = document.getElementById('totalText');
+    const bottomTotal = document.getElementById('bottomTotal');
+    const methodList = document.getElementById('methodList');
+    const btnContinue = document.getElementById('btnContinue');
+    const btnBack = document.getElementById('btnBack');
+
+    const formatRupiah = (num) =>
+        'Rp ' + (num || 0).toLocaleString('id-ID');
+
+    // baca state dari query sama seperti di chekout.html
+    function readStateFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('state');
+        if (!raw) return { items: [], subtotal: 0 };
+        try {
+            const decoded = JSON.parse(decodeURIComponent(raw));
+            return decoded;
+        } catch {
+            return { items: [], subtotal: 0 };
+        }
+    }
+
+    const payState = readStateFromQuery();
+    const subtotal = payState.items && payState.items.length
+        ? payState.items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0)
+        : payState.subtotal || 0;
+
+    subtotalText.textContent = formatRupiah(subtotal);
+    totalText.textContent = formatRupiah(subtotal);
+    bottomTotal.textContent = formatRupiah(subtotal);
+
+    // pilih metode
+    let currentMethod = 'qris';
+    methodList.addEventListener('click', (e) => {
+        const card = e.target.closest('.method-card');
+        if (!card) return;
+        document.querySelectorAll('.method-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        currentMethod = card.dataset.method;
+    });
+
+    // tombol kembali: kembali ke chekout.html sambil bawa state yang sama (kalau ada)
+    btnBack.addEventListener('click', () => {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('state');
+        const target = raw ? `chekout.html?state=${encodeURIComponent(raw)}` : 'chekout.html';
+        window.location.href = target;
+    });
+
+        btnContinue.addEventListener('click', () => {
+        if (currentMethod === 'qris') {
+            window.location.href = 'nota.html';
+        } else if (currentMethod === 'cash') {
+            window.location.href = 'kasir.html';
+        }
+    });
+
+</script>
+</body>
+</html>

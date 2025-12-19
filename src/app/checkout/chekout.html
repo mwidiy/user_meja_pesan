@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pesanan Anda</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-yellow: #FACC15;
+            --primary-yellow-soft: #FEF3C7;
+            --text-dark: #111827;
+            --text-gray: #6B7280;
+            --red-price: #EF4444;
+            --card-bg: #FFFFFF;
+            --page-bg: #F3F4F6;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Poppins',sans-serif; }
+        body {
+            background: var(--page-bg);
+            min-height: 100vh;
+        }
+
+        .page {
+            max-width: 414px;
+            margin: 0 auto;
+            padding: 16px 16px 120px; /* sedikit lebih besar untuk ruang summary fixed */
+        }
+
+        /* HEADER */
+        .header {
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            position:relative;
+            margin-bottom:16px;
+        }
+        .back-btn {
+            position:absolute;
+            left:0;
+            width:40px;
+            height:40px;
+            border-radius:999px;
+            border:none;
+            background:#7c7a7a;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            box-shadow:0 8px 18px rgba(15,23,42,0.08);
+            cursor:pointer;
+        }
+        .header-title {
+            font-size:1.3rem;
+            font-weight:700;
+            color:var(--text-dark);
+        }
+
+        /* CARD PESANAN */
+        .order-card {
+            background:var(--card-bg);
+            border-radius:24px;
+            padding:14px 16px;
+            display:flex;
+            gap:14px;
+            align-items:center;
+            box-shadow:0 10px 25px rgba(15,23,42,0.06);
+            margin-bottom:12px;
+        }
+        .order-thumb {
+            width:70px;
+            height:70px;
+            border-radius:16px;
+            overflow:hidden;
+            background:#E5E7EB;
+            flex-shrink:0;
+        }
+        .order-thumb img {
+            width:100%;
+            height:100%;
+            object-fit:cover;
+        }
+        .order-main {
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            justify-content:center;
+        }
+        .order-name {
+            font-weight:600;
+            font-size:1rem;
+            margin-bottom:4px;
+            color:var(--text-dark);
+        }
+        .order-price {
+            font-weight:700;
+            font-size:0.95rem;
+            color:var(--red-price);
+        }
+
+        .order-actions {
+            display:flex;
+            flex-direction:column;
+            align-items:flex-end;
+            gap:6px;
+        }
+
+        .qty-inline {
+            display:flex;
+            align-items:center;
+            gap:8px;
+            font-weight:600;
+            color:var(--text-dark);
+        }
+
+        /* tombol qty */
+        .qty-inline button {
+            border:none;
+            background:transparent;
+            font-size:1.4rem;
+            cursor:pointer;
+            color:var(--text-dark);
+        }
+
+        /* ikonnya sekarang X bulat abu-abu full color */
+        .trash-btn {
+            border:none;
+            background:transparent;
+            cursor:pointer;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:0 4px 0 0;
+        }
+        .trash-icon {
+            width:22px;
+            height:22px;
+        }
+
+        /* SECTION TITLE */
+        .section-title {
+            margin:18px 4px 10px;
+            font-weight:700;
+            color:var(--text-dark);
+            display:flex;
+            align-items:center;
+            gap:8px;
+            font-size:1.05rem;
+        }
+        .section-title span.icon {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+        }
+        .section-title svg.icon-cutlery {
+            width:22px;
+            height:22px;
+            fill:#FACC15; /* kuning */
+        }
+
+        /* ADD-ON HORIZONTAL LIST (rapi, 4 menu dari home1) */
+        .addon-list {
+            display:flex;
+            gap:12px;
+            overflow-x:auto;
+            padding:4px 2px 6px;
+        }
+        .addon-card {
+            min-width:150px;
+            background:#fff;
+            border-radius:18px;
+            box-shadow:0 8px 20px rgba(15,23,42,0.06);
+            padding:10px;
+            display:flex;
+            flex-direction:column;
+        }
+        .addon-thumb {
+            width:100%;
+            height:80px;
+            border-radius:14px;
+            overflow:hidden;
+            background:#E5E7EB;
+            margin-bottom:8px;
+        }
+        .addon-thumb img {
+            width:100%; height:100%; object-fit:cover;
+        }
+        .addon-name {
+            font-weight:600;
+            font-size:0.9rem;
+            color:var(--text-dark);
+            margin-bottom:2px;
+        }
+        .addon-price {
+            font-weight:700;
+            font-size:0.9rem;
+            color:var(--red-price);
+            margin-bottom:6px;
+        }
+        .addon-footer {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+        }
+        .addon-label {
+            font-size:0.8rem;
+            color:var(--text-gray);
+        }
+        .addon-add-btn {
+            align-self:flex-end;
+            width:30px;
+            height:30px;
+            border-radius:999px;
+            border:none;
+            background:var(--primary-yellow);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:1.3rem;
+            cursor:pointer;
+            box-shadow:0 8px 16px rgba(250,204,21,0.5);
+        }
+
+        /* CATATAN KHUSUS (kartu pemicu popup) */
+        .notes-card {
+            background:var(--primary-yellow-soft);
+            border-radius:20px;
+            padding:12px 14px;
+            margin:14px 0 18px;
+            cursor:pointer;
+            display:flex;
+            flex-direction:column;
+            gap:4px;
+        }
+        .notes-label-row {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+        }
+        .notes-label {
+            font-weight:600;
+            font-size:0.95rem;
+            color:var(--text-dark);
+        }
+        .notes-edit-hint {
+            font-size:0.85rem;
+            color:#F59E0B;
+        }
+        .notes-preview {
+            font-size:0.9rem;
+            color:var(--text-gray);
+            max-height:3.2em;
+            overflow:hidden;
+        }
+        .notes-empty {
+            color:#9CA3AF;
+        }
+        .notes-input-hidden {
+            display:none;
+        }
+
+        /* RINGKASAN PEMBAYARAN (untuk area fixed bawah) */
+        .summary-card {
+            background:#fff;
+            border-radius:24px;
+            padding:14px 16px;
+            box-shadow:0 12px 26px rgba(15,23,42,0.08);
+            margin-bottom:0;
+        }
+        .summary-title {
+            font-weight:700;
+            font-size:1rem;
+            color:var(--text-dark);
+            margin-bottom:8px;
+        }
+        .summary-row {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin:2px 0;
+            font-size:0.95rem;
+            color:var(--text-gray);
+        }
+        .summary-row.total {
+            margin-top:8px;
+            font-weight:700;
+            font-size:1.02rem;
+            color:var(--text-dark);
+        }
+        .summary-row.total .value {
+            color:var(--red-price);
+        }
+
+        /* AREA STICKY BAWAH: ringkasan lengkap + tombol */
+        .bottom-fixed {
+            position:fixed;
+            left:50%;
+            transform:translateX(-50%);
+            bottom:0;
+            width:100%;
+            max-width:414px;
+            padding:10px 16px 18px;
+            background:linear-gradient(to top, rgba(243,244,246,1), rgba(243,244,246,0.9), rgba(243,244,246,0));
+            box-sizing:border-box;
+            z-index:20;
+        }
+        .bottom-fixed-inner {
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+        .primary-btn {
+            width:100%;
+            border:none;
+            border-radius:999px;
+            padding:14px 16px;
+            background:var(--primary-yellow);
+            color:var(--text-dark);
+            font-weight:700;
+            font-size:1rem;
+            cursor:pointer;
+            box-shadow:0 14px 26px rgba(250,204,21,0.55);
+        }
+
+        /* POPUP CATATAN */
+        .notes-modal-backdrop {
+            position:fixed;
+            inset:0;
+            background:rgba(15,23,42,0.45);
+            display:none;
+            align-items:flex-end;
+            justify-content:center;
+            z-index:30;
+        }
+        .notes-modal-backdrop.show {
+            display:flex;
+        }
+        .notes-modal {
+            width:100%;
+            max-width:414px;
+            background:#FFFFFF;
+            border-top-left-radius:24px;
+            border-top-right-radius:24px;
+            padding:16px 18px 18px;
+            box-shadow:0 -12px 30px rgba(15,23,42,0.35);
+        }
+        .notes-modal-header {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            margin-bottom:10px;
+        }
+        .notes-modal-title {
+            font-weight:700;
+            font-size:1rem;
+            color:var(--text-dark);
+        }
+        .notes-modal-close {
+            border:none;
+            background:transparent;
+            font-size:1.4rem;
+            cursor:pointer;
+        }
+        .notes-textarea {
+            width:100%;
+            min-height:90px;
+            border-radius:14px;
+            border:1px solid #E5E7EB;
+            padding:10px 12px;
+            font-size:0.95rem;
+            outline:none;
+            resize:vertical;
+        }
+        .notes-modal-footer {
+            margin-top:10px;
+            display:flex;
+            justify-content:flex-end;
+            gap:8px;
+        }
+        .notes-btn-secondary,
+        .notes-btn-primary {
+            border-radius:999px;
+            padding:8px 14px;
+            font-size:0.9rem;
+            font-weight:600;
+            border:none;
+            cursor:pointer;
+        }
+        .notes-btn-secondary {
+            background:#E5E7EB;
+            color:#374151;
+        }
+        .notes-btn-primary {
+            background:var(--primary-yellow);
+            color:var(--text-dark);
+        }
+
+        /* ==== Order Type Card (Tipe Pesanan) - modular & maintainable ==== */
+        .order-type-wrapper {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            margin: 12px 0;
+        }
+
+        .order-type {
+            width: 375px;
+            height: 214px;
+            position: relative;
+            background: transparent;
+        }
+
+        .order-type__title {
+            position: absolute;
+            left: 20px;
+            top: 0px;
+            color: #1F2937;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 28px;
+            font-family: Inter, sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .order-type__title img.order-type__title-icon {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .order-type__options {
+            position: absolute;
+            left: 20px;
+            top: 40px;
+            width: 335px;
+            height: 116px;
+            background: transparent;
+        }
+
+        .order-type__option {
+            position: absolute;
+            width: 103.66px;
+            height: 116px;
+            border-radius: 12px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            background: var(--card-bg, #fff);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+        }
+
+        .order-type__option:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(15,23,42,0.08);
+        }
+
+        .order-type__option[aria-pressed="true"],
+        .order-type__option--active {
+            background: #FEFCE8;
+            outline: 2px solid #F0C419;
+            outline-offset: -2px;
+        }
+
+        .order-type__icon {
+            width: 36px;
+            height: 36px;
+            margin-top: 18px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .order-type__label {
+            margin-top: 14px;
+            text-align: center;
+            color: #1F2937;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: Inter, sans-serif;
+            line-height: 20px;
+        }
+
+        /* positions for three options (desktop-like fixed positions matching original coordinates) */
+        .order-type__option--first { left: 0px; top: 0px; }
+        .order-type__option--second { left: 115.66px; top: 0px; }
+        .order-type__option--third { left: 231.33px; top: 0px; }
+
+        /* location row under options */
+        .order-type__location {
+            position: absolute;
+            left: 20px;
+            top: 168px;
+            width: 335px;
+            height: 46px;
+            opacity: 0.5;
+        }
+        .order-type__location-card {
+            width: 100%;
+            height: 100%;
+            background: var(--card-bg, #fff);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border-radius: 12px;
+            outline: 1px #E5E7EB solid;
+            outline-offset: -1px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            padding-left: 16px;
+            color: #ADAEBC;
+            font-size: 14px;
+            font-family: Inter, sans-serif;
+            font-weight: 400;
+        }
+
+        /* small responsive tweak (keamanan agar tidak overflow) */
+        @media (max-width: 400px) {
+            .order-type { transform: scale(0.98); transform-origin: top center; }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <!-- HEADER -->
+    <header class="header">
+        <button class="back-btn" onclick="window.history.back()">
+           <img src="./assets/Back.svg" alt="">
+        </button>
+        <h1 class="header-title">Pesanan Anda</h1>
+    </header>
+
+    <!-- LIST PESANAN -->
+    <div id="orderList"></div>
+
+    <!-- TIPE PESANAN (UPDATED: title now includes icon img) -->
+    <div class="order-type-wrapper" aria-hidden="false">
+      <div class="order-type" role="region" aria-label="Tipe Pesanan">
+        <div class="order-type__title">
+          <!-- icon di sebelah teks, ganti src dengan asetmu -->
+          <img src="./assets/Card_Icon.svg" alt="" class="order-type__title-icon" />
+          <span>Tipe Pesanan</span>
+        </div>
+
+        <div class="order-type__options" role="tablist" aria-label="Opsi Tipe Pesanan">
+          <div class="order-type__option order-type__option--first" data-type="dinein" role="button" tabindex="0" aria-pressed="false">
+            <img src="./assets/garpu.svg" alt="Makan Sini" class="order-type__icon" />
+            <div class="order-type__label">Makan<br/>Sini</div>
+          </div>
+
+          <div class="order-type__option order-type__option--second" data-type="takeaway" role="button" tabindex="0" aria-pressed="false">
+            <img src="./assets/bungkus.svg" alt="Bungkus" class="order-type__icon" />
+            <div class="order-type__label">Bungkus</div>
+          </div>
+
+          <div class="order-type__option order-type__option--third" data-type="delivery" role="button" tabindex="0" aria-pressed="false">
+            <img src="./assets/motor.svg" alt="Antar" class="order-type__icon" />
+            <div class="order-type__label">Antar</div>
+          </div>
+        </div>
+
+        <div class="order-type__location">
+          <div class="order-type__location-card">Lokasi Antar (Khusus Delivery)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAU TAMBAH SESUATU -->
+    <div class="section-title">
+        <span class="icon">
+            <svg class="icon-cutlery" viewBox="0 0 24 24">
+                <path d="M4 3v7a2 2 0 0 0 2 2v9h2v-9a2 2 0 0 0 2-2V3h-2v4h-1V3H7v4H6V3H4zm10.5 0L14 3.5v7a3.5 3.5 0 0 0 2.5 3.346V21h2v-7.154A3.5 3.5 0 0 0 21 13.5V3.5L19.5 3 18 3.5 16.5 3z"/>
+            </svg>
+        </span>
+        <span>Mau Tambah Sesuatu?</span>
+    </div>
+    <div class="addon-list" id="addonList">
+        <!-- akan di-render via JS dari data addOnMenus -->
+    </div>
+
+    <!-- CATATAN KHUSUS -->
+    <div class="section-title" style="margin-top:20px;">
+        <span class="icon">📝</span>
+        <span>Catatan Khusus</span>
+    </div>
+    <div class="notes-card" id="notesCard">
+        <div class="notes-label-row">
+            <span class="notes-label">Catatan Untuk Dapur</span>
+            <span class="notes-edit-hint">Tambah / Ubah</span>
+        </div>
+        <div id="notesPreview" class="notes-preview notes-empty">
+            Tidak ada catatan. Ketuk untuk menambahkan.
+        </div>
+        <input id="notesInput" class="notes-input-hidden" />
+    </div>
+
+    <!-- HAPUS RINGKASAN NON-FIX: summaryCard di sini dihilangkan -->
+    <!-- SPACER agar konten tidak tertutup bottom-fixed -->
+    <div style="height:90px;"></div>
+</div>
+
+<!-- BOTTOM FIXED: ringkasan lengkap + tombol -->
+<div class="bottom-fixed">
+    <div class="bottom-fixed-inner">
+        <div class="summary-card">
+            <div class="summary-title">Ringkasan Pembayaran</div>
+            <div class="summary-row">
+                <span>Subtotal</span>
+                <span id="subtotalText">Rp 0</span>
+            </div>
+            <div class="summary-row total">
+                <span>Total Pembayaran</span>
+                <span class="value" id="totalTextBottom">Rp 0</span>
+            </div>
+        </div>
+        <button class="primary-btn" id="btnOrderNow">Pesan Sekarang</button>
+    </div>
+</div>
+
+<!-- MODAL / BOTTOM SHEET CATATAN -->
+<div class="notes-modal-backdrop" id="notesModal">
+    <div class="notes-modal">
+        <div class="notes-modal-header">
+            <span class="notes-modal-title">Catatan Untuk Dapur</span>
+            <button class="notes-modal-close" id="btnNotesClose">&times;</button>
+        </div>
+        <textarea id="notesTextarea" class="notes-textarea"
+                  placeholder="Contoh: tanpa sambal, level pedas sedang, saus dipisah, dll."></textarea>
+        <div class="notes-modal-footer">
+            <button class="notes-btn-secondary" id="btnNotesClear">Hapus</button>
+            <button class="notes-btn-primary" id="btnNotesSave">Simpan</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const orderListEl = document.getElementById('orderList');
+    const subtotalText = document.getElementById('subtotalText');
+    const totalTextBottom = document.getElementById('totalTextBottom');
+    const addonListEl = document.getElementById('addonList');
+
+    const notesCard = document.getElementById('notesCard');
+    const notesInputHidden = document.getElementById('notesInput');
+    const notesPreview = document.getElementById('notesPreview');
+    const notesModal = document.getElementById('notesModal');
+    const notesTextarea = document.getElementById('notesTextarea');
+    const btnNotesClose = document.getElementById('btnNotesClose');
+    const btnNotesSave = document.getElementById('btnNotesSave');
+    const btnNotesClear = document.getElementById('btnNotesClear');
+
+    const formatRupiah = (num) =>
+        'Rp ' + (num || 0).toLocaleString('id-ID');
+
+    // ambil state dari query string
+    function readStateFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('state');
+        if (!raw) return { items: [], subtotal: 0 };
+        try {
+            const decoded = JSON.parse(decodeURIComponent(raw));
+            return decoded;
+        } catch {
+            return { items: [], subtotal: 0 };
+        }
+    }
+
+    let checkoutState = readStateFromQuery();
+    if (!Array.isArray(checkoutState.items)) checkoutState.items = [];
+
+    function recalcTotals() {
+        checkoutState.subtotal = checkoutState.items
+            .reduce((s, it) => s + it.price * it.qty, 0);
+        subtotalText.textContent = formatRupiah(checkoutState.subtotal);
+        totalTextBottom.textContent = formatRupiah(checkoutState.subtotal);
+    }
+
+    function renderOrders() {
+        orderListEl.innerHTML = '';
+        if (checkoutState.items.length === 0) {
+            orderListEl.innerHTML =
+                '<div style="padding:24px 12px; text-align:center; color:#9CA3AF;">Belum ada pesanan.</div>';
+            recalcTotals();
+            return;
+        }
+
+        checkoutState.items.forEach((item, idx) => {
+            const card = document.createElement('div');
+            card.className = 'order-card';
+            const imgSrc = item.imgFile
+                ? `./assets/${item.imgFile}`
+                : 'https://placehold.co/200x200?text=Menu';
+
+            card.innerHTML = `
+                <div class="order-thumb">
+                    <img src="${imgSrc}" alt="${item.name}">
+                </div>
+                <div class="order-main">
+                    <div class="order-name">${item.name}</div>
+                    <div class="order-price">${formatRupiah(item.price)}</div>
+                </div>
+                <div class="order-actions">
+                    <div class="qty-inline">
+                        <button class="trash-btn" aria-label="Hapus" onclick="removeItem(${idx})">
+                            <svg class="trash-icon" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="9" fill="#E5E7EB"/>
+                                <path d="M9 9l6 6M15 9l-6 6" stroke="#9CA3AF" stroke-width="1.6" stroke-linecap="round"/>
+                            </svg>
+                        </button>
+                        <button onclick="changeQty(${idx}, -1)">−</button>
+                        <span>${item.qty}</span>
+                        <button onclick="changeQty(${idx}, 1)">+</button>
+                    </div>
+                </div>
+            `;
+            orderListEl.appendChild(card);
+        });
+        recalcTotals();
+    }
+
+    window.changeQty = (index, delta) => {
+        const item = checkoutState.items[index];
+        const next = (item.qty || 0) + delta;
+        if (next <= 0) {
+            checkoutState.items.splice(index, 1);
+        } else {
+            item.qty = next;
+        }
+        renderOrders();
+    };
+
+    window.removeItem = (index) => {
+        checkoutState.items.splice(index, 1);
+        renderOrders();
+    };
+
+    document.getElementById('btnOrderNow').addEventListener('click', () => {
+        if (checkoutState.items.length === 0) {
+            alert('Belum ada pesanan.');
+            return;
+        }
+
+        // simpan state ke query string
+        const stateParam = encodeURIComponent(JSON.stringify(checkoutState));
+
+        // redirect ke halaman pembayaran
+        window.location.href = `Pembayaran.html?state=${stateParam}`;
+    });
+
+
+    // --- DATA MENU TAMBAHAN (ambil 4 menu dari home1, hardcode di sini) ---
+    const addOnMenus = [
+        { id: 1, name: 'Nasi Omelet', price: 8000, imgFile: 'Nasi_Omelet.png' },
+        { id: 2, name: 'Es Teh Manis', price: 3000, imgFile: 'Es_Teh_Manis.png' },
+        { id: 3, name: 'Es Susu Coklat', price: 5000, imgFile: 'Es_Susu_Coklat.png' },
+        { id: 5, name: 'Nasi Katsu', price: 13000, imgFile: 'Nasi_Katsu.png' }
+    ];
+
+    function renderAddOns() {
+        addonListEl.innerHTML = '';
+        addOnMenus.forEach(m => {
+            const card = document.createElement('div');
+            card.className = 'addon-card';
+            const imgSrc = `./assets/${m.imgFile}`;
+            card.innerHTML = `
+                <div class="addon-thumb">
+                    <img src="${imgSrc}" alt="${m.name}"
+                         onerror="this.onerror=null;this.src='https://placehold.co/300x200?text=${encodeURIComponent('${m.name}')}';">
+                </div>
+                <div class="addon-name">${m.name}</div>
+                <div class="addon-price">${formatRupiah(m.price)}</div>
+                <div class="addon-footer">
+                    <span class="addon-label">Tambah</span>
+                    <button class="addon-add-btn" onclick="addAddon(${m.id})">+</button>
+                </div>
+            `;
+            addonListEl.appendChild(card);
+        });
+    }
+
+    window.addAddon = (id) => {
+        const menu = addOnMenus.find(m => m.id === id);
+        if (!menu) return;
+        const existing = checkoutState.items.find(i => i.id === id);
+        if (existing) {
+            existing.qty += 1;
+        } else {
+            checkoutState.items.push({
+                id: menu.id,
+                name: menu.name,
+                price: menu.price,
+                qty: 1,
+                imgFile: menu.imgFile
+            });
+        }
+        renderOrders();
+    };
+
+    // --- INTERAKSI CATATAN (popup) ---
+    function openNotesModal() {
+        notesTextarea.value = notesInputHidden.value || '';
+        notesModal.classList.add('show');
+    }
+    function closeNotesModal() {
+        notesModal.classList.remove('show');
+    }
+    function updateNotesPreview() {
+        const val = notesInputHidden.value.trim();
+        if (!val) {
+            notesPreview.textContent = 'Tidak ada catatan. Ketuk untuk menambahkan.';
+            notesPreview.classList.add('notes-empty');
+        } else {
+            notesPreview.textContent = val.length > 80 ? val.slice(0, 77) + '...' : val;
+            notesPreview.classList.remove('notes-empty');
+        }
+    }
+
+    notesCard.addEventListener('click', openNotesModal);
+    btnNotesClose.addEventListener('click', closeNotesModal);
+
+    btnNotesSave.addEventListener('click', () => {
+        notesInputHidden.value = notesTextarea.value;
+        updateNotesPreview();
+        closeNotesModal();
+    });
+
+    btnNotesClear.addEventListener('click', () => {
+        notesTextarea.value = '';
+        notesInputHidden.value = '';
+        updateNotesPreview();
+    });
+
+    // klik di luar modal untuk menutup
+    notesModal.addEventListener('click', (e) => {
+        if (e.target === notesModal) {
+            closeNotesModal();
+        }
+    });
+
+    // INIT
+    updateNotesPreview();
+    renderAddOns();
+    renderOrders();
+
+    // ===== Order type selection (fungsi interaktif) =====
+	(function(){
+		// pastikan checkoutState ada
+		if (!checkoutState || typeof checkoutState !== 'object') checkoutState = { items: [], subtotal: 0 };
+
+		// default jika belum ada
+		if (!checkoutState.orderType) checkoutState.orderType = 'dinein';
+
+		const orderTypeOptions = document.querySelectorAll('.order-type__option');
+
+		function setOrderType(type){
+			checkoutState.orderType = type;
+			orderTypeOptions.forEach(opt => {
+				const isActive = opt.dataset.type === type;
+				opt.classList.toggle('order-type__option--active', isActive);
+				opt.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+			});
+		}
+
+		// attach handlers
+		orderTypeOptions.forEach(opt => {
+			opt.addEventListener('click', () => setOrderType(opt.dataset.type));
+			opt.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					setOrderType(opt.dataset.type);
+				}
+			});
+		});
+
+		// inisialisasi UI sesuai state
+		setOrderType(checkoutState.orderType || 'dinein');
+	})();
+</script>
+</body>
+</html>

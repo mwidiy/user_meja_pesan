@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="description" content="Aplikasi Pemesanan Menu Makanan">
+    <title>Meja Pesan App</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- CSS VARIABLES & RESET --- */
+        :root {
+            --primary-yellow: #FACC15; /* kuning badge & FAB */
+            --primary-yellow-soft: #FDE68A;
+            --primary-dark: #FACC15;
+            --text-dark: #111827;
+            --text-gray: #6B7280;
+            --bg-light: #F3F4F6;
+            --white: #FFFFFF;
+            --red-price: #EF4444;
+            --blue-banner: #1F2937; /* biru gelap banner */
+            --blue-fab: #111827;
+            --shadow-sm: 0 8px 15px rgba(15, 23, 42, 0.06);
+            --shadow-md: 0 18px 35px rgba(15, 23, 42, 0.14);
+            --radius-lg: 24px;
+            --radius-md: 18px;
+            --transition-speed: 0.3s;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: #e5e7eb;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* --- LAYOUT UTAMA --- */
+        #app {
+            width: 100%;
+            max-width: 414px; /* lebar device seperti desain */
+            background-color: #F9FAFB;
+            position: relative;
+            min-height: 100vh;
+            box-shadow: 0 0 0 1px rgba(15,23,42,0.03), var(--shadow-md);
+            overflow: hidden;
+        }
+
+        /* Utilities */
+        ::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .hidden { display: none !important; }
+
+        /* --- HEADER --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 22px;
+            background: var(--white);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            box-shadow: 0 1px 0 rgba(15,23,42,0.04);
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 8px; /* sedikit lebih rapat agar tulisan Logo dekat dengan gambar */
+        }
+
+        /* LOGO FIX (Auto Size) */
+        .logo-container {
+            height: 38px;
+            max-width: 140px;
+            display: flex;
+            align-items: center;
+        }
+
+        .logo-container img {
+            height: 100%;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .logo-text-inline {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #6B7280;
+        }
+
+        .brand-text {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #111827;
+        }
+
+        .table-badge {
+            background-color: var(--primary-yellow);
+            padding: 10px 22px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 1rem;
+            color: #111827;
+            box-shadow: 0 8px 16px rgba(234, 179, 8, 0.4);
+        }
+
+        /* --- HOME VIEW CONTAINER --- */
+        #homeView {
+            padding-bottom: 96px; /* dikurangi supaya scroll tidak terlalu panjang */
+            background: #F9FAFB;
+            transition: transform var(--transition-speed) ease;
+        }
+
+        /* --- HERO & SEARCH --- */
+        .hero-container {
+            padding: 22px 22px 18px 22px;
+            background: var(--white);
+            border-bottom-left-radius: 32px;
+            border-bottom-right-radius: 32px;
+        }
+
+        .greeting {
+            font-size: 1.9rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            color: var(--text-dark);
+            margin-bottom: 18px;
+        }
+
+        .search-bar {
+            background: #F3F4F6;
+            border-radius: 999px;
+            padding: 12px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: none;
+        }
+
+        .search-bar input {
+            border: none;
+            background: transparent;
+            width: 100%;
+            outline: none;
+            font-size: 0.95rem;
+            color: var(--text-dark);
+        }
+
+        /* --- BANNER SLIDER --- */
+        .banner-section {
+            margin-top: 20px;
+            position: relative;
+        }
+
+        .banner-track {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            gap: 14px;
+            padding: 0 22px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .banner-card {
+            flex: 0 0 100%;
+            scroll-snap-align: center;
+            background-color: var(--blue-banner);
+            border-radius: 26px;
+            padding: 18px 18px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--white);
+            height: 120px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .banner-img {
+            width: 90px;
+            height: 90px;
+            border-radius: 18px;
+            object-fit: cover;
+            background: #4B5563;
+            flex-shrink: 0;
+        }
+
+        .banner-content h3 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1.35;
+            margin-bottom: 4px;
+        }
+
+        .banner-content p {
+            font-size: 0.9rem;
+            opacity: 0.95;
+        }
+
+        .banner-dots {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: #D1D5DB;
+            transition: all 0.25s ease;
+        }
+
+        .dot.active {
+            background: var(--blue-banner);
+            width: 18px;
+        }
+
+        /* --- CATEGORIES --- */
+        .category-list {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding: 22px 22px 18px 22px;
+        }
+
+        .cat-btn {
+            border: none;
+            background: var(--white);
+            padding: 9px 20px;
+            border-radius: 999px;
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: var(--text-gray);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 8px 18px rgba(15,23,42,0.03);
+        }
+
+        .cat-btn.active {
+            background: var(--primary-yellow);
+            color: var(--text-dark);
+            box-shadow: 0 10px 20px rgba(250, 204, 21, 0.5);
+        }
+
+        .cat-btn svg.icon {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* --- MENU GRID --- */
+        .menu-container {
+            /* rapikan sedikit spacing bawah */
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            padding: 0 22px 20px 22px;
+        }
+
+        .menu-card {
+            /* biar tinggi terasa konsisten tapi tetap fleksibel */
+            background: var(--white);
+            border-radius: 22px;
+            padding: 10px 10px 12px;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .card-image-box {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3.3;
+            border-radius: 18px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            background: #E5E7EB;
+        }
+
+        .card-image-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* AR badge (img) tetap */
+        .ar-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 0;
+            border-radius: 6px;
+            background: transparent;
+        }
+
+        .ar-badge img {
+            width: 40px;   /* sesuaikan dengan referensi */
+            height: 18px;  /* sesuaikan dengan referensi */
+            object-fit: contain;
+            display: block;
+        }
+
+        /* ====== QTY BAR: TRACK PUTIH + TOMBOL KUNING MENEMPEL ====== */
+        .card-qty-bar {
+            position: absolute;
+            left: 58%;                     /* agak ke kanan, selaras dengan trigger dulu */
+            transform: translateX(-50%);
+            bottom: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            background: transparent;
+        }
+
+        /* track putih di tengah, lonjong, tidak terlalu besar */
+        .card-qty-track {
+            min-width: 54px;
+            height: 26px;
+            border-radius: 999px;
+            background: #FFFFFF;
+            box-shadow: 0 3px 8px rgba(15,23,42,0.10);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* angka di dalam track -> sekarang input number kecil */
+        .card-qty-number {
+            width: 32px;
+            border: none;
+            outline: none;
+            background: transparent;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #111827;
+            -moz-appearance: textfield;
+        }
+        .card-qty-number::-webkit-outer-spin-button,
+        .card-qty-number::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* tombol minus & plus: ukuran sama dengan tombol trigger (38x38) */
+        .card-qty-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 999px;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            font-weight: 600;
+            cursor: pointer;
+            background: var(--primary-yellow);
+            color: #111827;
+            box-shadow: 0 8px 16px rgba(250, 204, 21, 0.55);
+            z-index: 2;
+        }
+
+        /* posisi kiri dan kanan menempel ke pill putih */
+        .card-qty-btn.minus {
+            margin-right: -18px;
+        }
+
+        .card-qty-btn.plus {
+            margin-left: -18px;
+        }
+
+        .add-btn {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 38px;
+            height: 38px;
+            background: var(--primary-yellow);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            cursor: pointer;
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--text-dark);
+            box-shadow: 0 10px 18px rgba(250, 204, 21, 0.55);
+            z-index: 2;
+        }
+
+        .menu-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-dark);
+            margin-top: 2px;
+            margin-bottom: 2px;
+            line-height: 1.3;
+        }
+
+        .menu-price {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--red-price);
+        }
+
+        /* --- DETAIL PAGE (MODAL) --- */
+        #detailView {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--white); z-index: 200;
+            overflow-y: auto; transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; flex-direction: column;
+        }
+        #detailView.active { transform: translateY(0); }
+
+        .detail-header {
+            padding: 16px 20px; display: flex; align-items: center; gap: 16px;
+            background: var(--white); position: sticky; top: 0; z-index: 10;
+        }
+        .back-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 5px; }
+        .detail-title-header { font-weight: 700; font-size: 1.1rem; }
+
+        .detail-image-container {
+            width: 100%;
+            aspect-ratio: 1/1;
+            position: relative;
+            background: #f0f0f0;
+        }
+
+        /* batasi rule img hanya untuk gambar produk, bukan untuk watermark AR */
+        .detail-image-container img#dtImage {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* AR watermark di Detail – sedikit lebih besar */
+        .ar-watermark {
+            position: absolute;
+            top: 18px;
+            left: 18px;
+            width: 64px;          /* naik dari 56 -> 64 untuk sedikit lebih besar */
+            height: auto;
+            z-index: 2;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .detail-content { padding: 24px 20px; flex: 1; }
+        .dt-name { font-size: 1.5rem; font-weight: 700; color: var(--text-dark); margin-bottom: 8px; }
+        .dt-price { font-size: 1.25rem; font-weight: 600; color: var(--red-price); margin-bottom: 16px; }
+        .dt-desc { font-size: 0.95rem; color: var(--text-gray); line-height: 1.6; margin-bottom: 24px; }
+
+        .detail-actions { margin-top: auto; }
+        .qty-wrapper { margin-bottom: 24px; }
+        .qty-label { font-weight: 600; margin-bottom: 10px; display: block; }
+        .qty-selector {
+            display: inline-flex; align-items: center; gap: 16px;
+        }
+        .qty-circle {
+            width: 36px; height: 36px; border-radius: 50%;
+            border: 1px solid #E5E7EB; background: white;
+            font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+        .qty-number { font-size: 1.1rem; font-weight: 600; min-width: 20px; text-align: center; }
+
+        .btn-group { display: flex; flex-direction: column; gap: 12px; }
+        
+        .btn-main {
+            width: 100%; padding: 14px; border-radius: 12px;
+            font-weight: 600; font-size: 1rem; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-primary { background: var(--primary-yellow); color: var(--text-dark); }
+        .btn-outline { 
+            background: transparent; border: 1px solid var(--text-dark); color: var(--text-dark); 
+        }
+
+        /* --- FABs --- */
+        .fab-container {
+            position: fixed;
+            bottom: 26px;
+            right: max(20px, calc(50vw - 207px)); /* agar tetap di dalam kartu max-width */
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            z-index: 100;
+        }
+
+        .fab {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 35px rgba(15,23,42,0.35);
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s;
+        }
+
+        .fab:active {
+            transform: scale(0.95);
+        }
+
+        .fab-notif {
+            background: var(--blue-fab);
+            color: var(--white);
+        }
+
+        .fab-cart {
+            background: var(--primary-yellow);
+            color: var(--text-dark);
+        }
+
+        .cart-badge {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            background: var(--red-price);
+            color: var(--white);
+            font-size: 0.7rem;
+            font-weight: 700;
+            min-width: 22px;
+            height: 22px;
+            padding: 0 6px;
+            border-radius: 999px;
+            border: 2px solid var(--white);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.2s;
+        }
+
+        .cart-badge.show {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .icon-lg { width: 24px; height: 24px; }
+        .icon { width: 20px; height: 20px; }
+
+    </style>
+</head>
+<body>
+
+<div id="app">
+    
+    <div id="homeView">
+        <header class="header">
+            <div class="logo-area">
+                <div class="logo-container">
+                    <img src="./assets/logo.png" alt="Logo" onerror="this.style.display='none'; this.parentNode.innerHTML='<div class=\'brand-text\'>Logo</div>'">
+                </div>
+                <span class="logo-text-inline">Logo</span>
+            </div>
+            <div class="table-badge">Meja 12</div>
+        </header>
+
+        <section class="hero-container">
+            <h1 class="greeting">Selamat Datang!</h1>
+            <div class="search-bar">
+                <svg class="icon" fill="none" stroke="#9CA3AF" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <input type="text" id="searchInput" placeholder="Mau pesan apa hari ini?">
+            </div>
+        </section>
+
+        <section class="banner-section">
+            <div class="banner-track no-scrollbar" id="bannerTrack">
+                <div class="banner-card">
+                    <img src="./assets/Paket_Omelet.png" alt="Paket Hemat" class="banner-img">
+                    <div class="banner-content">
+                        <h3>Paket Hemat Nasi Omelet</h3>
+                        <p>Hanya Rp 10.000</p>
+                    </div>
+                </div>
+                <div class="banner-card">
+                    <img src="./assets/Paket_Nasi_Katsu.png" alt="Paket Mantap" class="banner-img">
+                    <div class="banner-content">
+                        <h3>Paket Mantap Nasi Katsu</h3>
+                        <p>Hanya Rp 15.000</p>
+                    </div>
+                </div>
+                <div class="banner-card" style="background: linear-gradient(45deg, #2C3E50, #34495E);">
+                    <img src="./assets/Ar.png" alt="Fitur AR" class="banner-img" style="object-fit: contain; padding: 5px; background: rgba(255,255,255,0.1);">
+                    <div class="banner-content">
+                        <h3>Nikmati Melihat Menu Langsung Di Meja</h3>
+                        <p>Dengan Fitur AR</p>
+                    </div>
+                </div>
+            </div>
+            <div class="banner-dots" id="bannerDots">
+                <div class="dot active"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+        </section>
+
+        <nav class="category-list no-scrollbar">
+            <button class="cat-btn active" data-cat="all">
+                <svg class="icon" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clip-rule="evenodd"></path>
+                </svg>
+                Terlaris
+            </button>
+            <button class="cat-btn" data-cat="makanan">Makanan</button>
+            <button class="cat-btn" data-cat="minuman">Minuman</button>
+            <button class="cat-btn" data-cat="cemilan">Cemilan</button>
+        </nav>
+
+        <main class="menu-container" id="menuContainer">
+            </main>
+
+        <div class="fab-container">
+            <div class="fab fab-cart" id="cartBtn">
+                <div class="cart-badge" id="cartBadge">0</div>
+                <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            </div>
+            <div class="fab fab-notif" onclick="window.location.href='status.html'">
+                <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+            </div>
+        </div>
+    </div>
+
+    <div id="detailView">
+        <div class="detail-header">
+            <button class="back-btn" onclick="closeDetail()">
+                <svg class="icon-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            </button>
+            <span class="detail-title-header">Detail Produk</span>
+        </div>
+
+        <div class="detail-image-container">
+            <!-- source sudah sama dengan card AR icon -->
+            <img src="./assets/Ar_Icon.png" class="ar-watermark" id="dtArWatermark" style="display:none;">
+            <img id="dtImage" src="" alt="Product Detail">
+        </div>
+
+        <div class="detail-content">
+            <h2 id="dtName" class="dt-name">Nama Produk</h2>
+            <div id="dtPrice" class="dt-price">Rp 0</div>
+            <p id="dtDesc" class="dt-desc">Deskripsi produk...</p>
+
+            <div class="detail-actions">
+                <div class="qty-wrapper">
+                    <span class="qty-label">Jumlah</span>
+                    <div class="qty-selector">
+                        <button class="qty-circle" onclick="updateDetailQty(-1)">−</button>
+                        <span id="dtQty" class="qty-number">0</span>
+                        <button class="qty-circle" onclick="updateDetailQty(1)">+</button>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button id="btnAR" class="btn-main btn-outline" style="display:none;">
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                        Lihat di Meja Anda (AR)
+                    </button>
+                    
+                    <button class="btn-main btn-primary" onclick="addFromDetail()">
+                        Tambah ke Keranjang
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // --- DATA PRODUK ---
+    const products = [
+        { 
+            id: 1, 
+            name: 'Nasi Omelet', 
+            price: 8000, 
+            category: 'makanan', 
+            ar: true, 
+            imgText: 'Nasi Omelet', 
+            qty: 0,
+            selected: 0,
+            imgFile: 'Nasi_Omelet.png',
+            desc: "Nasi omelet lembut dengan telur yang dimasak sempurna dan aroma gurih yang khas. Dipadukan dengan bumbu sederhana namun kaya rasa, memberikan kelezatan hangat di setiap suapan."
+        },
+        { 
+            id: 2, 
+            name: 'Es Teh Manis', 
+            price: 3000, 
+            category: 'minuman', 
+            ar: true, 
+            imgText: 'Es Teh Manis', 
+            qty: 0,
+            selected: 0,
+            imgFile: 'Es_Teh_Manis.png',
+            desc: "Kesegaran teh asli pilihan dengan manis gula murni yang pas. Cocok untuk menemani santap siang Anda yang panas."
+        },
+        { 
+            id: 3, 
+            name: 'Es Susu Coklat', 
+            price: 5000, 
+            category: 'minuman', 
+            ar: false, 
+            imgText: 'Es Susu Coklat', 
+            qty: 0,
+            selected: 0,
+            imgFile: 'Es_Susu_Coklat.png',
+            desc: "Perpaduan susu segar dan coklat premium yang creamy. Minuman manis yang membangkitkan mood seketika."
+        },
+        { 
+            id: 4, 
+            name: 'Nasi Soto Bening', 
+            price: 8000, 
+            category: 'makanan', 
+            ar: false, 
+            imgText: 'Nasi Soto Bening', 
+            qty: 0,
+            selected: 0,
+            imgFile: 'Soto_Bening.png',
+            desc: "Soto ayam kuah bening segar dengan rempah tradisional, disajikan hangat dengan nasi putih dan pelengkap."
+        },
+        { 
+            id: 5, 
+            name: 'Nasi Katsu', 
+            price: 13000, 
+            category: 'makanan', 
+            ar: false, 
+            imgText: 'Nasi Katsu', 
+            qty: 0,
+            selected: 0,
+            imgFile: 'Nasi_Katsu.png',
+            desc: "Nasi ayam katsu renyah dengan potongan ayam tebal yang digoreng hingga keemasan. Disajikan dengan saus khas yang gurih dan sedikit manis, memberikan perpaduan rasa yang nikmat di setiap suapan."
+        },
+        { 
+            id: 6, 
+            name: 'Es Matcha', 
+            price: 5000, 
+            category: 'minuman', 
+            ar: false, 
+            imgText: 'Es Matcha', 
+            qty: 0,
+            selected: 0,
+            imgFile: 'Es_Matcha.png',
+            desc: "Minuman matcha jepang dengan susu creamy yang lembut. Rasa otentik teh hijau yang menenangkan."
+        }
+    ];
+
+    // --- STATE ---
+    let activeFilter = 'all';
+    let searchQuery = '';
+    let currentDetailId = null;
+
+    // --- DOM ELEMENTS ---
+    const menuContainer = document.getElementById('menuContainer');
+    const searchInput = document.getElementById('searchInput');
+    const cartBadge = document.getElementById('cartBadge');
+    const cartBtn = document.getElementById('cartBtn');
+    const detailView = document.getElementById('detailView');
+    const dtImage = document.getElementById('dtImage');
+    const dtName = document.getElementById('dtName');
+    const dtPrice = document.getElementById('dtPrice');
+    const dtDesc = document.getElementById('dtDesc');
+    const dtQty = document.getElementById('dtQty');
+    const btnAR = document.getElementById('btnAR');
+    const dtArWatermark = document.getElementById('dtArWatermark');
+
+    const formatRupiah = (num) => 'Rp ' + num.toLocaleString('id-ID');
+
+    // --- RENDER MENU (rapi & harmonis) ---
+    function renderMenu(items) {
+        menuContainer.innerHTML = '';
+        if (items.length === 0) {
+            menuContainer.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#9CA3AF; padding: 40px;">Menu tidak ditemukan</div>';
+            return;
+        }
+        items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'menu-card';
+            card.onclick = (e) => {
+                const t = e.target;
+                if (
+                    t.classList.contains('add-btn') ||
+                    t.classList.contains('card-qty-btn') ||
+                    t.classList.contains('card-qty-number')
+                ) return;
+                openDetail(item.id);
+            };
+
+            const imgSrc = `./assets/${item.imgFile}`;
+            const hasQty = item.selected > 0;
+
+            card.innerHTML = `
+                <div class="card-image-box">
+                    ${item.ar ? `
+                        <div class="ar-badge">
+                            <img src="./assets/Ar_Icon.png" alt="AR">
+                        </div>` : ''}
+                    <img src="${imgSrc}" alt="${item.name}" loading="lazy"
+                         onerror="this.onerror=null;this.src='https://placehold.co/400x300/E5E7EB/6B7280?text=${encodeURIComponent(item.imgText)}';">
+                    ${
+                        hasQty
+                            ? `<div class="card-qty-bar">
+                                    <button class="card-qty-btn minus" onclick="changeCardQty(event, ${item.id}, -1)">−</button>
+                                    <div class="card-qty-track">
+                                        <input class="card-qty-number" type="number" min="0"
+                                               value="${item.selected}"
+                                               onchange="changeCardQtyManual(event, ${item.id})">
+                                    </div>
+                                    <button class="card-qty-btn plus" onclick="changeCardQty(event, ${item.id}, 1)">+</button>
+                               </div>`
+                            : `<button class="add-btn" onclick="activateCardQty(event, ${item.id})">+</button>`
+                    }
+                </div>
+                <h3 class="menu-title">${item.name}</h3>
+                <div class="menu-price">${formatRupiah(item.price)}</div>
+            `;
+            menuContainer.appendChild(card);
+        });
+    }
+
+    // --- INTERAKSI CARD MENU (+, -, jumlah) ---
+    window.activateCardQty = (e, id) => {
+        e.stopPropagation();
+        const product = products.find(p => p.id === id);
+        product.selected = 1;
+        product.qty = product.selected;
+        updateGlobalCart();
+        filterAndRender();
+    };
+
+    window.changeCardQty = (e, id, delta) => {
+        e.stopPropagation();
+        const product = products.find(p => p.id === id);
+        const next = (product.selected || 0) + delta;
+        if (next <= 0) {
+            product.selected = 0;
+            product.qty = 0;
+        } else {
+            product.selected = next;
+            product.qty = next;
+        }
+        updateGlobalCart();
+        filterAndRender();
+    };
+
+    // input manual jumlah di tengah
+    window.changeCardQtyManual = (e, id) => {
+        e.stopPropagation();
+        const raw = e.target.value;
+        let val = parseInt(raw, 10);
+        if (isNaN(val) || val < 0) val = 0;
+
+        const product = products.find(p => p.id === id);
+        product.selected = val;
+        product.qty = val;
+        updateGlobalCart();
+        filterAndRender();
+    };
+
+    // --- FILTER & SEARCH ---
+    function filterAndRender() {
+        const filtered = products.filter(p => {
+            const matchSearch = p.name.toLowerCase().includes(searchQuery);
+            const matchCat = activeFilter === 'all' ? true : p.category === activeFilter;
+            return matchSearch && matchCat;
+        });
+        renderMenu(filtered);
+    }
+
+    document.querySelectorAll('.cat-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeFilter = btn.dataset.cat;
+            filterAndRender();
+        });
+    });
+
+    searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase();
+        filterAndRender();
+    });
+
+    // --- CART LOGIC ---
+    function updateGlobalCart() {
+        const totalItems = products.reduce((sum, p) => sum + (p.qty || 0), 0);
+        cartBadge.innerText = totalItems;
+        if (totalItems > 0) {
+            cartBadge.classList.add('show');
+            cartBtn.style.transform = 'scale(1.1)';
+            setTimeout(() => cartBtn.style.transform = 'scale(1)', 150);
+        } else {
+            cartBadge.classList.remove('show');
+        }
+    }
+
+    // klik icon keranjang -> ke halaman checkout
+    cartBtn.addEventListener('click', () => {
+        const orderedItems = products
+            .filter(p => (p.qty || 0) > 0)
+            .map(p => ({
+                id: p.id,
+                name: p.name,
+                price: p.price,
+                qty: p.qty,
+                imgFile: p.imgFile
+            }));
+        const payload = {
+            items: orderedItems,
+            subtotal: orderedItems.reduce((s, i) => s + i.price * i.qty, 0)
+        };
+        const qs = encodeURIComponent(JSON.stringify(payload));
+        window.location.href = `chekout.html?state=${qs}`;
+    });
+
+    // Quick Add dari tempat lain jika dibutuhkan
+    window.quickAdd = (id) => {
+        const product = products.find(p => p.id === id);
+        product.selected = (product.selected || 0) + 1;
+        product.qty = product.selected;
+        updateGlobalCart();
+        filterAndRender();
+    };
+
+    // --- DETAIL VIEW LOGIC ---
+    function openDetail(id) {
+        const product = products.find(p => p.id === id);
+        currentDetailId = id;
+
+        const detailImgSrc = `./assets/${product.imgFile}`;
+        dtImage.src = detailImgSrc;
+        dtImage.onerror = function() {
+            this.onerror = null;
+            this.src = `https://placehold.co/600x600/E5E7EB/6B7280?text=${encodeURIComponent(product.imgText)}`;
+        };
+
+        dtName.innerText = product.name;
+        dtPrice.innerText = formatRupiah(product.price);
+        dtDesc.innerText = product.desc;
+        dtQty.innerText = product.selected;
+
+        if (product.ar) {
+            btnAR.style.display = 'flex';
+            dtArWatermark.style.display = 'block';
+        } else {
+            btnAR.style.display = 'none';
+            dtArWatermark.style.display = 'none';
+        }
+
+        detailView.classList.add('active');
+    }
+
+    window.closeDetail = () => {
+        detailView.classList.remove('active');
+        currentDetailId = null;
+    };
+
+    window.updateDetailQty = (change) => {
+        if (currentDetailId === null) return;
+        const product = products.find(p => p.id === currentDetailId);
+        const next = (product.selected || 0) + change;
+        if (next < 0) return;
+        product.selected = next;
+        product.qty = next;
+        dtQty.innerText = product.selected;
+        updateGlobalCart();
+        filterAndRender();
+    };
+
+    window.addFromDetail = () => {
+        closeDetail();
+    };
+
+    // --- BANNER SLIDER (Ping-Pong) ---
+    const bannerTrack = document.getElementById('bannerTrack');
+    const dots = document.querySelectorAll('.dot');
+    let sliderDirection = 1; 
+    let autoSlideInterval;
+
+    bannerTrack.addEventListener('scroll', () => {
+        const scrollLeft = bannerTrack.scrollLeft;
+        const cardWidth = bannerTrack.offsetWidth;
+        const activeIndex = Math.round(scrollLeft / cardWidth);
+        dots.forEach((d, i) => d.classList.toggle('active', i === activeIndex));
+    });
+
+    const startAutoSlide = () => {
+        autoSlideInterval = setInterval(() => {
+            const cardWidth = bannerTrack.offsetWidth;
+            const maxScroll = bannerTrack.scrollWidth - cardWidth;
+            let nextScroll = bannerTrack.scrollLeft + (cardWidth * sliderDirection);
+
+            if (nextScroll >= maxScroll) {
+                nextScroll = maxScroll; sliderDirection = -1;
+            } else if (nextScroll <= 0) {
+                nextScroll = 0; sliderDirection = 1;
+            }
+            bannerTrack.scrollTo({ left: nextScroll, behavior: 'smooth' });
+        }, 3000);
+    };
+
+    bannerTrack.addEventListener('touchstart', () => clearInterval(autoSlideInterval));
+    bannerTrack.addEventListener('touchend', startAutoSlide);
+
+    // --- INIT ---
+    renderMenu(products);
+    startAutoSlide();
+</script>
+</body>
+</html>
