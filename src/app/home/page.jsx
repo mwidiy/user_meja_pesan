@@ -2,19 +2,66 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { productsData, formatRupiah } from './productsData';
+import { getProducts, getCategories, getImageUrl } from '../../services/api';
 import ProductDetailModal from './ProductDetailModal';
+
+const formatRupiah = (price) => {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0
+    }).format(price);
+};
 
 export default function HomePixelPerfect() {
     const router = useRouter();
     const bannerRef = useRef(null);
 
     // --- STATE ---
+    const [products, setProducts] = useState([]); // Pastikan initialized array kosong
+    const [categories, setCategories] = useState([]); // Pastikan initialized array kosong
+    const [isLoading, setIsLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('all');
+
     const [searchQuery, setSearchQuery] = useState('');
     const [cart, setCart] = useState({});
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+
+    // --- DATA FETCHING ---
+    useEffect(() => {
+        const fetchData = async () => {
+            setIsLoading(true);
+            try {
+                const [prodsRes, catsRes] = await Promise.all([
+                    getProducts(),
+                    getCategories()
+                ]);
+
+                // SAFETY CHECK: Ambil .data jika response berupa object, atau fallback ke array kosong
+                // Handle products
+                const productsData = prodsRes.data && Array.isArray(prodsRes.data)
+                    ? prodsRes.data
+                    : (Array.isArray(prodsRes) ? prodsRes : []);
+
+                // Handle categories
+                const categoriesData = catsRes.data && Array.isArray(catsRes.data)
+                    ? catsRes.data
+                    : (Array.isArray(catsRes) ? catsRes : []);
+
+                setProducts(productsData);
+                setCategories(categoriesData);
+            } catch (err) {
+                console.error('Error loading data:', err);
+                setProducts([]);
+                setCategories([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
 
     // load cart from localStorage on mount
     useEffect(() => {
@@ -80,10 +127,14 @@ export default function HomePixelPerfect() {
         };
     }, []);
 
-    // --- LOGIC CART ---
-    const filteredProducts = productsData.filter((p) => {
-        const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchCat = activeFilter === 'all' ? true : p.category === activeFilter;
+    // --- LOGIC FILTER & CART ---
+    // SAFETY CHECK: Pastikan products adalah array sebelum di-filter
+    const productList = Array.isArray(products) ? products : [];
+
+    const filteredProducts = productList.filter((p) => {
+        const matchSearch = p.name ? p.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+        // Gunakan categoryId dari backend
+        const matchCat = activeFilter === 'all' ? true : p.categoryId == activeFilter;
         return matchSearch && matchCat;
     });
 
@@ -184,7 +235,7 @@ export default function HomePixelPerfect() {
 
     return (
         <>
-            {/* CSS STYLE BLOCK - Mengambil style langsung dari home.html */}
+            {/* CSS STYLE BLOCK */}
             <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
         
@@ -287,7 +338,7 @@ export default function HomePixelPerfect() {
         }
         .fab:active { transform: scale(0.95); }
 
-        /* PERBAIKAN WARNA ICON (Sesuai home.html) */
+        /* WARNA ICON */
         .fab-cart {
             background-color: var(--primary-yellow);
             color: var(--text-dark);
@@ -388,35 +439,56 @@ export default function HomePixelPerfect() {
 
                     {/* CATEGORIES */}
                     <nav className="flex gap-[10px] overflow-x-auto px-[22px] pt-[22px] pb-[18px] no-scrollbar">
-                        {['all', 'makanan', 'minuman', 'cemilan'].map(cat => {
-                            const isActive = activeFilter === cat;
+                        {/* Tombol Terlaris / Semua */}
+                        <button
+                            onClick={() => setActiveFilter('all')}
+                            className={`
+                                  border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
+                                  ${activeFilter === 'all' ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
+                              `}
+                        >
+                            {activeFilter === 'all' && (
+                                <svg className="w-[18px] h-[18px]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd"></path></svg>
+                            )}
+                            Semua
+                        </button>
+
+                        {/* Kategori Dinamis dari API */}
+                        {Array.isArray(categories) && categories.map((cat) => {
+                            const isActive = activeFilter === cat.id;
                             return (
                                 <button
-                                    key={cat}
-                                    onClick={() => setActiveFilter(cat)}
+                                    key={cat.id}
+                                    onClick={() => setActiveFilter(cat.id)}
                                     className={`
-                                  border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
-                                  ${isActive ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
-                              `}
+                                        border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
+                                        ${isActive ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
+                                    `}
                                 >
-                                    {cat === 'all' && (
-                                        <svg className="w-[18px] h-[18px]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd"></path></svg>
-                                    )}
-                                    {cat === 'all' ? 'Terlaris' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                                    {cat.name}
                                 </button>
-                            )
+                            );
                         })}
                     </nav>
 
                     {/* MENU GRID */}
                     <main className="menu-grid">
-                        {filteredProducts.map(item => {
+                        {isLoading ? (
+                            <div className="col-span-2 text-center py-10 text-gray-500 font-medium">
+                                Memuat Menu...
+                            </div>
+                        ) : filteredProducts.length === 0 ? (
+                            <div className="col-span-2 text-center py-10 text-gray-400">
+                                Produk tidak ditemukan.
+                            </div>
+                        ) : filteredProducts.map((item) => {
                             const qty = cart[item.id] ?? 0;
+                            const imageUrl = getImageUrl(item.image);
+
                             return (
                                 <div
                                     key={item.id}
                                     className="menu-card"
-                                    // buka detail: tampilkan modal produk (konsisten dengan page.jsx)
                                     onClick={() => setSelectedProduct({ ...item, selectedQty: qty })}
                                 >
                                     {/* Image */}
@@ -426,7 +498,15 @@ export default function HomePixelPerfect() {
                                                 <img src="/assets/Ar_Icon.png" className="w-[40px] h-[18px] object-contain block" />
                                             </div>
                                         )}
-                                        <img src={`/assets/${item.imgFile}`} className="w-full h-full object-cover" />
+                                        <img
+                                            src={getImageUrl(item.image)}
+                                            className="w-full h-full object-cover"
+                                            alt={item.name}
+                                            onError={(e) => {
+                                                e.currentTarget.onerror = null;
+                                                e.currentTarget.src = '/assets/logo.png'; // Fallback ke logo atau placeholder lokal
+                                            }}
+                                        />
 
                                         {/* Qty Controller */}
                                         {qty === 0 ? (
@@ -475,35 +555,32 @@ export default function HomePixelPerfect() {
 
                 {/* FABs */}
                 <div className="fab-container">
-                    {/* Cart FAB */}
                     <div
                         className="fab fab-cart relative"
                         onClick={() => {
-                            // bangun state checkout dari cart dan productsData
                             const items = Object.entries(cart).map(([key, qty]) => {
                                 const idNum = Number(key);
-                                const p = productsData.find(x => x.id === idNum);
+                                const p = products.find(x => x.id === idNum);
                                 return {
                                     id: p?.id ?? idNum,
                                     name: p?.name ?? 'Item',
                                     price: p?.price ?? 0,
                                     qty,
-                                    imgFile: p?.imgFile ?? null
+                                    image: p?.image ?? null
                                 };
                             }).filter(it => it.qty > 0);
+
                             const subtotal = items.reduce((s, it) => s + (it.price || 0) * it.qty, 0);
                             const state = { items, subtotal, orderType: 'dinein' };
                             router.push(`/checkout?state=${encodeURIComponent(JSON.stringify(state))}`);
                         }}
                     >
-                        {/* Badge Keranjang: Warna Putih Di-Force */}
                         <div className={`cart-badge ${totalItemsInCart > 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}>
                             {totalItemsInCart}
                         </div>
                         <svg className="w-[24px] h-[24px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                     </div>
 
-                    {/* Notif FAB: Warna Putih Di-Force */}
                     <div
                         className="fab fab-notif"
                         onClick={() => router.push('/status')}
@@ -512,7 +589,6 @@ export default function HomePixelPerfect() {
                     </div>
                 </div>
 
-                {/* Product detail sebagai modal terpisah komponen */}
                 <ProductDetailModal
                     product={selectedProduct}
                     onClose={() => setSelectedProduct(null)}

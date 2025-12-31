@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ARViewer from './ARViewer'; // Import the ARViewer component
+import { getImageUrl } from '../../services/api';
 
 const formatRupiah = (num) => 'Rp ' + num.toLocaleString('id-ID');
 
@@ -87,7 +88,7 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
                             )}
                             <img
                                 className="product-img"
-                                src={`/assets/${product.imgFile}`}
+                                src={getImageUrl(product.image)}
                                 alt={product.name}
                                 onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://placehold.co/600x600/E5E7EB/6B7280?text=${encodeURIComponent(product.name)}`; }}
                             />
@@ -96,7 +97,7 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
                         <div className="detail-content">
                             <h2 className="dt-name">{product.name}</h2>
                             <div className="dt-price">{formatRupiah(product.price)}</div>
-                            <p className="dt-desc">{product.desc}</p>
+                            <p className="dt-desc">{product.description || product.desc || 'Deskripsi belum tersedia.'}</p>
 
                             <div className="detail-actions">
                                 <div className="qty-wrapper">

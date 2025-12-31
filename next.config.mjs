@@ -14,7 +14,15 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Masukkan config Next.js lain di sini jika ada
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: '192.168.1.6',
+        port: '3000',
+      },
+    ],
+  },
 };
 
 export default withPWA(nextConfig);
