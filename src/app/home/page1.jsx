@@ -2,19 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { productsData, formatRupiah } from './productsData';
 import ProductDetailModal from './ProductDetailModal';
-
-// --- DATA PRODUK ---
-const productsData = [
-    { id: 1, name: 'Nasi Omelet', price: 8000, category: 'makanan', ar: true, imgFile: 'Paket_Omelet.png', desc: "Nasi omelet lembut dengan telur yang dimasak sempurna..." },
-    { id: 2, name: 'Es Teh Manis', price: 3000, category: 'minuman', ar: true, imgFile: 'Es_Teh_Manis.png', desc: "Kesegaran teh asli pilihan..." },
-    { id: 3, name: 'Es Susu Coklat', price: 5000, category: 'minuman', ar: false, imgFile: 'Es_Susu_Coklat.png', desc: "Perpaduan susu segar dan coklat premium..." },
-    { id: 4, name: 'Nasi Soto Bening', price: 8000, category: 'makanan', ar: false, imgFile: 'Soto_Bening.png', desc: "Soto ayam kuah bening segar..." },
-    { id: 5, name: 'Nasi Katsu', price: 13000, category: 'makanan', ar: false, imgFile: 'Nasi_Katsu.png', desc: "Nasi ayam katsu renyah..." },
-    { id: 6, name: 'Es Matcha', price: 5000, category: 'minuman', ar: false, imgFile: 'Es_Matcha.png', desc: "Minuman matcha jepang..." }
-];
-
-const formatRupiah = (num) => 'Rp ' + num.toLocaleString('id-ID');
 
 export default function HomePixelPerfect() {
     const router = useRouter();
@@ -26,6 +15,30 @@ export default function HomePixelPerfect() {
     const [cart, setCart] = useState({});
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+
+    // load cart from localStorage on mount
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('cart_v1');
+            if (raw) setCart(JSON.parse(raw));
+        } catch (e) { /* ignore */ }
+    }, []);
+
+    // persist cart to localStorage
+    useEffect(() => {
+        try { localStorage.setItem('cart_v1', JSON.stringify(cart)); } catch (e) { }
+    }, [cart]);
+
+    // sync cart across tabs/windows
+    useEffect(() => {
+        const onStorage = (e) => {
+            if (e.key === 'cart_v1') {
+                try { setCart(JSON.parse(e.newValue || '{}')); } catch (err) { }
+            }
+        };
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
 
     // --- LOGIC BANNER AUTO SLIDE ---
     useEffect(() => {
@@ -103,25 +116,33 @@ export default function HomePixelPerfect() {
         });
     };
 
-    // Handler untuk modal: ubah selectedQty di state selectedProduct
+    // Handler modal: update cart + selectedProduct qty (live)
     const handleModalChangeQty = (delta) => {
-        setSelectedProduct(curr => {
-            if (!curr) return curr;
-            return { ...curr, selectedQty: Math.max(1, (curr.selectedQty || 1) + delta) };
+        if (!selectedProduct) return;
+        const id = selectedProduct.id;
+        setCart(prev => {
+            const current = prev[id] || 0;
+            const next = Math.max(0, current + delta);
+            const copy = { ...prev };
+            if (next <= 0) delete copy[id];
+            else copy[id] = next;
+            // update selectedProduct qty immediately so modal shows correct value
+            setSelectedProduct(curr => curr ? { ...curr, selectedQty: next } : curr);
+            return copy;
         });
     };
 
-    // Saat user menekan "Tambah ke Keranjang" di modal:
-    // kita ingin menyetel jumlah di cart ke selectedQty (bukan selalu menambahkan lagi),
-    // jadi hitung delta yang diperlukan dari current cart value.
+    // When "Tambah ke Keranjang" di modal ditekan: ensure cart matches selectedQty, then close modal
     const handleModalAddToCart = () => {
-        if (!selectedProduct) return;
+        if (!selectedProduct) { setSelectedProduct(null); return; }
         const id = selectedProduct.id;
-        const current = cart[id] || 0;
-        const target = selectedProduct.selectedQty || 1;
-        const delta = target - current;
-        // gunakan updateCart dengan event null agar tidak memanggil stopPropagation
-        updateCart(null, id, delta);
+        const target = selectedProduct.selectedQty || 0;
+        setCart(prev => {
+            const copy = { ...prev };
+            if (target <= 0) delete copy[id];
+            else copy[id] = target;
+            return copy;
+        });
         setSelectedProduct(null);
     };
 
@@ -359,7 +380,8 @@ export default function HomePixelPerfect() {
                                 <div
                                     key={item.id}
                                     className="menu-card"
-                                    onClick={() => setSelectedProduct({ ...item, selectedQty: qty || 1 })}
+                                    // buka detail: tampilkan modal produk (konsisten dengan page.jsx)
+                                    onClick={() => setSelectedProduct({ ...item, selectedQty: qty })}
                                 >
                                     {/* Image */}
                                     <div className="relative w-full aspect-[4/3.3] rounded-[18px] overflow-hidden mb-[10px] bg-[#E5E7EB]">
@@ -419,7 +441,23 @@ export default function HomePixelPerfect() {
                     {/* Cart FAB */}
                     <div
                         className="fab fab-cart relative"
-                        onClick={() => router.push(`/checkout?state=${encodeURIComponent(JSON.stringify({ items: [], subtotal: 0 }))}`)}
+                        onClick={() => {
+                            // bangun state checkout dari cart dan productsData
+                            const items = Object.entries(cart).map(([key, qty]) => {
+                                const idNum = Number(key);
+                                const p = productsData.find(x => x.id === idNum);
+                                return {
+                                    id: p?.id ?? idNum,
+                                    name: p?.name ?? 'Item',
+                                    price: p?.price ?? 0,
+                                    qty,
+                                    imgFile: p?.imgFile ?? null
+                                };
+                            }).filter(it => it.qty > 0);
+                            const subtotal = items.reduce((s, it) => s + (it.price || 0) * it.qty, 0);
+                            const state = { items, subtotal, orderType: 'dinein' };
+                            router.push(`/checkout?state=${encodeURIComponent(JSON.stringify(state))}`);
+                        }}
                     >
                         {/* Badge Keranjang: Warna Putih Di-Force */}
                         <div className={`cart-badge ${totalItemsInCart > 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}>
@@ -437,14 +475,13 @@ export default function HomePixelPerfect() {
                     </div>
                 </div>
 
-                {/* GANTI: hapus blok modal lama, tampilkan komponen modal */}
+                {/* Product detail sebagai modal terpisah komponen */}
                 <ProductDetailModal
                     product={selectedProduct}
                     onClose={() => setSelectedProduct(null)}
                     onChangeSelectedQty={(delta) => handleModalChangeQty(delta)}
                     onAddToCart={() => handleModalAddToCart()}
                 />
-
             </div>
         </>
     );

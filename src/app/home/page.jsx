@@ -87,12 +87,12 @@ export default function HomePixelPerfect() {
         return matchSearch && matchCat;
     });
 
-    const totalItemsInCart = Object.values(cart).reduce((a, b) => a + b, 0);
+    const totalItemsInCart = Object.values(cart).reduce((a, b) => a + (Number(b) || 0), 0);
 
     const updateCart = (e, id, delta) => {
         if (e) e.stopPropagation();
         setCart(prev => {
-            const current = prev[id] || 0;
+            const current = parseInt(prev[id]) || 0;
             const next = current + delta;
             if (next <= 0) {
                 const copy = { ...prev };
@@ -105,7 +105,12 @@ export default function HomePixelPerfect() {
 
     const manualInputCart = (e, id) => {
         e.stopPropagation();
-        const val = parseInt(e.target.value) || 0;
+        const raw = e.target.value;
+        if (raw === '') {
+            setCart(prev => ({ ...prev, [id]: '' }));
+            return;
+        }
+        const val = parseInt(raw) || 0;
         setCart(prev => {
             if (val <= 0) {
                 const copy = { ...prev };
@@ -114,6 +119,17 @@ export default function HomePixelPerfect() {
             }
             return { ...prev, [id]: val };
         });
+    };
+
+    const handleInputBlur = (e, id) => {
+        const val = parseInt(e.target.value) || 0;
+        if (val <= 0) {
+            setCart(prev => {
+                const copy = { ...prev };
+                delete copy[id];
+                return copy;
+            });
+        }
     };
 
     // Handler modal: update cart + selectedProduct qty (live)
@@ -144,6 +160,26 @@ export default function HomePixelPerfect() {
             return copy;
         });
         setSelectedProduct(null);
+    };
+
+    const handleModalManualQty = (val) => {
+        if (!selectedProduct) return;
+        const id = selectedProduct.id;
+        if (val === '') {
+            setCart(prev => ({ ...prev, [id]: '' }));
+            setSelectedProduct(curr => curr ? { ...curr, selectedQty: '' } : curr);
+            return;
+        }
+        const num = parseInt(val) || 0;
+        setCart(prev => {
+            if (num <= 0) {
+                const copy = { ...prev };
+                delete copy[id];
+                return copy;
+            }
+            return { ...prev, [id]: num };
+        });
+        setSelectedProduct(curr => curr ? { ...curr, selectedQty: num } : curr);
     };
 
     return (
@@ -226,7 +262,7 @@ export default function HomePixelPerfect() {
             display: flex; align-items: center; justify-content: center; z-index: 20;
         }
         .qty-track {
-            min-width: 54px; height: 26px; background: white; border-radius: 999px;
+            min-width: 80px; height: 26px; background: white; border-radius: 999px;
             display: flex; align-items: center; justify-content: center;
             box-shadow: 0 3px 8px rgba(15,23,42,0.10); position: relative; z-index: 1;
         }
@@ -375,7 +411,7 @@ export default function HomePixelPerfect() {
                     {/* MENU GRID */}
                     <main className="menu-grid">
                         {filteredProducts.map(item => {
-                            const qty = cart[item.id] || 0;
+                            const qty = cart[item.id] ?? 0;
                             return (
                                 <div
                                     key={item.id}
@@ -401,7 +437,7 @@ export default function HomePixelPerfect() {
                                                 +
                                             </button>
                                         ) : (
-                                            <div className="qty-bar">
+                                            <div className="qty-bar" onClick={(e) => e.stopPropagation()}>
                                                 <button
                                                     className="qty-btn"
                                                     style={{ marginRight: '-18px' }}
@@ -412,9 +448,10 @@ export default function HomePixelPerfect() {
                                                 <div className="qty-track">
                                                     <input
                                                         type="number"
-                                                        className="w-[32px] border-none bg-transparent text-center font-semibold text-[0.9rem] text-[#111827] outline-none"
+                                                        className="w-[50px] border-none bg-transparent text-center font-semibold text-[0.9rem] text-[#111827] outline-none"
                                                         value={qty}
                                                         onChange={(e) => manualInputCart(e, item.id)}
+                                                        onBlur={(e) => handleInputBlur(e, item.id)}
                                                     />
                                                 </div>
                                                 <button
@@ -480,6 +517,7 @@ export default function HomePixelPerfect() {
                     product={selectedProduct}
                     onClose={() => setSelectedProduct(null)}
                     onChangeSelectedQty={(delta) => handleModalChangeQty(delta)}
+                    onManualInput={(val) => handleModalManualQty(val)}
                     onAddToCart={() => handleModalAddToCart()}
                 />
             </div>
