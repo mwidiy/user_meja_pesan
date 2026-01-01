@@ -26,6 +26,19 @@ export const getCategories = async () => {
     }
 };
 
+export const getBanners = async () => {
+    try {
+        const res = await fetch(`${API_URL}/api/banners?status=active`, { cache: 'no-store' });
+        if (!res.ok) {
+            throw new Error(`Failed to fetch banners: ${res.statusText}`);
+        }
+        return await res.json();
+    } catch (error) {
+        console.error('Error fetching banners:', error);
+        return [];
+    }
+};
+
 export const getImageUrl = (urlOrFilename) => {
     if (!urlOrFilename) return '/assets/logo.png'; // Default placeholder/fallback
 

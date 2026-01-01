@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { getProducts, getCategories, getImageUrl } from '../../services/api';
+import { io } from 'socket.io-client';
+import { getProducts, getCategories, getBanners, getImageUrl } from '../../services/api';
 import ProductDetailModal from './ProductDetailModal';
 
 const formatRupiah = (price) => {
@@ -20,6 +21,7 @@ export default function HomePixelPerfect() {
     // --- STATE ---
     const [products, setProducts] = useState([]); // Pastikan initialized array kosong
     const [categories, setCategories] = useState([]); // Pastikan initialized array kosong
+    const [banners, setBanners] = useState([]); // Pastikan initialized array kosong
     const [isLoading, setIsLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('all');
 
@@ -28,39 +30,90 @@ export default function HomePixelPerfect() {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
-    // --- DATA FETCHING ---
+    // --- FETCH FUNCTIONS (INDEPENDENT) ---
+    const fetchDataProducts = async () => {
+        try {
+            const prodsRes = await getProducts();
+            const productsData = prodsRes.data && Array.isArray(prodsRes.data)
+                ? prodsRes.data
+                : (Array.isArray(prodsRes) ? prodsRes : []);
+            setProducts(productsData);
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            // Optional: setProducts([]) jika ingin reset saat error
+        }
+    };
+
+    const fetchDataBanners = async () => {
+        try {
+            const bannersRes = await getBanners();
+            const bannersData = bannersRes.data && Array.isArray(bannersRes.data)
+                ? bannersRes.data
+                : (Array.isArray(bannersRes) ? bannersRes : []);
+            setBanners(bannersData);
+        } catch (error) {
+            console.error('Error fetching banners:', error);
+        }
+    };
+
+    const fetchDataCategories = async () => {
+        try {
+            const catsRes = await getCategories();
+            const categoriesData = catsRes.data && Array.isArray(catsRes.data)
+                ? catsRes.data
+                : (Array.isArray(catsRes) ? catsRes : []);
+            setCategories(categoriesData);
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+        }
+    };
+
+    // --- INITIAL DATA FETCHING ---
     useEffect(() => {
-        const fetchData = async () => {
+        const initData = async () => {
             setIsLoading(true);
             try {
-                const [prodsRes, catsRes] = await Promise.all([
-                    getProducts(),
-                    getCategories()
+                await Promise.all([
+                    fetchDataProducts(),
+                    fetchDataCategories(),
+                    fetchDataBanners()
                 ]);
-
-                // SAFETY CHECK: Ambil .data jika response berupa object, atau fallback ke array kosong
-                // Handle products
-                const productsData = prodsRes.data && Array.isArray(prodsRes.data)
-                    ? prodsRes.data
-                    : (Array.isArray(prodsRes) ? prodsRes : []);
-
-                // Handle categories
-                const categoriesData = catsRes.data && Array.isArray(catsRes.data)
-                    ? catsRes.data
-                    : (Array.isArray(catsRes) ? catsRes : []);
-
-                setProducts(productsData);
-                setCategories(categoriesData);
             } catch (err) {
-                console.error('Error loading data:', err);
-                setProducts([]);
-                setCategories([]);
+                console.error('Error loading initial data:', err);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchData();
+        initData();
+    }, []);
+
+    // --- SOCKET.IO LISTENER ---
+    useEffect(() => {
+        // Inisialisasi koneksi Socket.io
+        // Gunakan process.env.NEXT_PUBLIC_API_URL atau default localhost jika undefined
+        const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        const socket = io(socketUrl, {
+            transports: ['websocket'],
+            reconnection: true,
+        });
+
+        // Event Listener: Products Updated
+        socket.on('products_updated', () => {
+            console.log('Socket event: products_updated received. Refetching...');
+            fetchDataProducts(); // Silent update (tanpa loading spinner)
+        });
+
+        // Event Listener: Banners Updated
+        socket.on('banners_updated', () => {
+            console.log('Socket event: banners_updated received. Refetching...');
+            fetchDataBanners(); // Silent update
+        });
+
+        // Cleanup saat unmount
+        return () => {
+            socket.disconnect();
+        };
     }, []);
 
     // load cart from localStorage on mount
@@ -90,7 +143,7 @@ export default function HomePixelPerfect() {
     // --- LOGIC BANNER AUTO SLIDE ---
     useEffect(() => {
         const bannerTrack = bannerRef.current;
-        if (!bannerTrack) return;
+        if (!bannerTrack || !banners || banners.length === 0) return;
 
         let sliderDirection = 1;
 
@@ -125,7 +178,7 @@ export default function HomePixelPerfect() {
             clearInterval(interval);
             if (bannerTrack) bannerTrack.removeEventListener('scroll', handleScroll);
         };
-    }, []);
+    }, [banners]);
 
     // --- LOGIC FILTER & CART ---
     // SAFETY CHECK: Pastikan products adalah array sebelum di-filter
@@ -402,34 +455,41 @@ export default function HomePixelPerfect() {
                     {/* BANNER */}
                     <section className="mt-[20px] relative">
                         <div className="banner-track no-scrollbar" ref={bannerRef}>
-                            {/* Card 1 */}
-                            <div className="banner-card">
-                                <img src="/assets/Paket_Omelet.png" className="w-[90px] h-[90px] rounded-[18px] object-cover bg-gray-600 flex-shrink-0" />
-                                <div>
-                                    <h3 className="text-[1.05rem] font-bold leading-[1.35] mb-[4px]">Paket Hemat<br />Nasi Omelet</h3>
-                                    <p className="text-[0.9rem] opacity-95">Hanya Rp 10.000</p>
+                            {banners.length > 0 ? (
+                                banners.map((banner) => (
+                                    <div className="banner-card" key={banner.id}>
+                                        <img
+                                            src={getImageUrl(banner.image)}
+                                            className="w-[90px] h-[90px] rounded-[18px] object-cover bg-gray-600 flex-shrink-0"
+                                            alt={banner.title}
+                                            onError={(e) => e.target.style.display = 'none'} // Safety jika gambar error
+                                        />
+                                        <div>
+                                            <h3 className="text-[1.05rem] font-bold leading-[1.35] mb-[4px]">
+                                                {banner.subtitle || "Promo"} <br />
+                                                {banner.title}
+                                            </h3>
+                                            <p className="text-[0.9rem] opacity-95">
+                                                {banner.highlightText}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                // Fallback jika banner kosong (opsional, bisa spinner atau statis)
+                                <div className="banner-card">
+                                    <div className="w-[90px] h-[90px] rounded-[18px] bg-gray-600 flex-shrink-0 animate-pulse"></div>
+                                    <div>
+                                        <div className="h-4 w-32 bg-gray-500 rounded mb-2 animate-pulse"></div>
+                                        <div className="h-3 w-20 bg-gray-500 rounded animate-pulse"></div>
+                                    </div>
                                 </div>
-                            </div>
-                            {/* Card 2 */}
-                            <div className="banner-card">
-                                <img src="/assets/Paket_Nasi_Katsu.png" className="w-[90px] h-[90px] rounded-[18px] object-cover bg-gray-600 flex-shrink-0" />
-                                <div>
-                                    <h3 className="text-[1.05rem] font-bold leading-[1.35] mb-[4px]">Paket Mantap<br />Nasi Katsu</h3>
-                                    <p className="text-[0.9rem] opacity-95">Hanya Rp 15.000</p>
-                                </div>
-                            </div>
-                            {/* Card 3 (Background konsisten) */}
-                            <div className="banner-card">
-                                <img src="/assets/Ar.png" className="w-[90px] h-[90px] rounded-[18px] object-contain p-1 bg-white/10 flex-shrink-0" />
-                                <div>
-                                    <h3 className="text-[1.05rem] font-bold leading-[1.35] mb-[4px]">Nikmati Melihat<br />Menu Langsung</h3>
-                                    <p className="text-[0.9rem] opacity-95">Dengan Fitur AR</p>
-                                </div>
-                            </div>
+                            )}
                         </div>
                         {/* Dots Indicator */}
                         <div className="flex justify-center gap-[6px] mt-[8px]">
-                            {[0, 1, 2].map(idx => (
+                            {/* Hanya render dots jika ada banners */}
+                            {banners.length > 0 && banners.map((_, idx) => (
                                 <div key={idx}
                                     className={`h-[6px] rounded-full transition-all duration-300 ${activeBannerIndex === idx ? 'w-[18px] bg-[#1F2937]' : 'w-[6px] bg-[#D1D5DB]'}`}
                                 ></div>
@@ -484,12 +544,13 @@ export default function HomePixelPerfect() {
                         ) : filteredProducts.map((item) => {
                             const qty = cart[item.id] ?? 0;
                             const imageUrl = getImageUrl(item.image);
+                            const isHabis = !item.isActive;
 
                             return (
                                 <div
                                     key={item.id}
                                     className="menu-card"
-                                    onClick={() => setSelectedProduct({ ...item, selectedQty: qty })}
+                                    onClick={() => !isHabis && setSelectedProduct({ ...item, selectedQty: qty })}
                                 >
                                     {/* Image */}
                                     <div className="relative w-full aspect-[4/3.3] rounded-[18px] overflow-hidden mb-[10px] bg-[#E5E7EB]">
@@ -500,7 +561,7 @@ export default function HomePixelPerfect() {
                                         )}
                                         <img
                                             src={getImageUrl(item.image)}
-                                            className="w-full h-full object-cover"
+                                            className={`w-full h-full object-cover ${isHabis ? 'grayscale opacity-60' : ''}`}
                                             alt={item.name}
                                             onError={(e) => {
                                                 e.currentTarget.onerror = null;
@@ -508,45 +569,63 @@ export default function HomePixelPerfect() {
                                             }}
                                         />
 
-                                        {/* Qty Controller */}
-                                        {qty === 0 ? (
-                                            <button
-                                                className="absolute bottom-[10px] right-[10px] w-[38px] h-[38px] rounded-full flex items-center justify-center border-none cursor-pointer text-[1.5rem] font-medium text-[#111827] z-20 bg-[#FACC15] shadow-[0_10px_18px_rgba(250,204,21,0.55)]"
-                                                onClick={(e) => updateCart(e, item.id, 1)}
-                                            >
-                                                +
-                                            </button>
-                                        ) : (
-                                            <div className="qty-bar" onClick={(e) => e.stopPropagation()}>
+                                        {/* Overlay HABIS jika tidak aktif */}
+                                        {isHabis && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
+                                                <span className="text-white font-bold text-lg tracking-wider border-2 border-white px-3 py-1 rounded-lg transform -rotate-12">
+                                                    HABIS
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {/* Qty Controller (Hanya muncul jika TIDAK habis) */}
+                                        {!isHabis && (
+                                            qty === 0 ? (
                                                 <button
-                                                    className="qty-btn"
-                                                    style={{ marginRight: '-18px' }}
-                                                    onClick={(e) => updateCart(e, item.id, -1)}
-                                                >
-                                                    −
-                                                </button>
-                                                <div className="qty-track">
-                                                    <input
-                                                        type="number"
-                                                        className="w-[50px] border-none bg-transparent text-center font-semibold text-[0.9rem] text-[#111827] outline-none"
-                                                        value={qty}
-                                                        onChange={(e) => manualInputCart(e, item.id)}
-                                                        onBlur={(e) => handleInputBlur(e, item.id)}
-                                                    />
-                                                </div>
-                                                <button
-                                                    className="qty-btn"
-                                                    style={{ marginLeft: '-18px' }}
+                                                    className="absolute bottom-[10px] right-[10px] w-[38px] h-[38px] rounded-full flex items-center justify-center border-none cursor-pointer text-[1.5rem] font-medium text-[#111827] z-20 bg-[#FACC15] shadow-[0_10px_18px_rgba(250,204,21,0.55)]"
                                                     onClick={(e) => updateCart(e, item.id, 1)}
                                                 >
                                                     +
                                                 </button>
-                                            </div>
+                                            ) : (
+                                                <div className="qty-bar" onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        className="qty-btn"
+                                                        style={{ marginRight: '-18px' }}
+                                                        onClick={(e) => updateCart(e, item.id, -1)}
+                                                    >
+                                                        −
+                                                    </button>
+                                                    <div className="qty-track">
+                                                        <input
+                                                            type="number"
+                                                            className="w-[50px] border-none bg-transparent text-center font-semibold text-[0.9rem] text-[#111827] outline-none"
+                                                            value={qty}
+                                                            onChange={(e) => manualInputCart(e, item.id)}
+                                                            onBlur={(e) => handleInputBlur(e, item.id)}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        className="qty-btn"
+                                                        style={{ marginLeft: '-18px' }}
+                                                        onClick={(e) => updateCart(e, item.id, 1)}
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            )
                                         )}
                                     </div>
 
-                                    <h3 className="text-[0.95rem] font-bold text-[#111827] mt-[2px] mb-[2px] leading-[1.3]">{item.name}</h3>
-                                    <div className="text-[0.9rem] font-bold text-[#EF4444]">{formatRupiah(item.price)}</div>
+                                    <h3 className={`text-[0.95rem] font-bold mt-[2px] mb-[2px] leading-[1.3] ${isHabis ? 'text-gray-400' : 'text-[#111827]'}`}>
+                                        {item.name}
+                                    </h3>
+                                    <div className={`text-[0.9rem] font-bold ${isHabis ? 'text-gray-400' : 'text-[#EF4444]'}`}>
+                                        {formatRupiah(item.price)}
+                                    </div>
+                                    {isHabis && (
+                                        <div className="text-[0.75rem] font-bold text-gray-400 mt-1">Stok Habis</div>
+                                    )}
                                 </div>
                             );
                         })}
