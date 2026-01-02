@@ -29,6 +29,7 @@ export default function HomePixelPerfect() {
     const [cart, setCart] = useState({});
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+    const [customerTable, setCustomerTable] = useState(null);
 
     // --- FETCH FUNCTIONS (INDEPENDENT) ---
     const fetchDataProducts = async () => {
@@ -138,6 +139,18 @@ export default function HomePixelPerfect() {
         };
         window.addEventListener('storage', onStorage);
         return () => window.removeEventListener('storage', onStorage);
+    }, []);
+
+    // Load Info Meja dari LocalStorage
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('customer_table');
+            if (stored) {
+                setCustomerTable(JSON.parse(stored));
+            }
+        } catch (error) {
+            console.error('Gagal memuat info meja:', error);
+        }
     }, []);
 
     // --- LOGIC BANNER AUTO SLIDE ---
@@ -430,7 +443,14 @@ export default function HomePixelPerfect() {
                         </div>
                         <span className="font-semibold text-[0.9rem] text-[#6B7280]">Logo</span>
                     </div>
-                    <div className="badge">Meja 12</div>
+                    <div className="badge">
+                        {(() => {
+                            if (!customerTable) return 'Meja ...';
+                            // Parsing logic aman untuk object/string
+                            const locationName = typeof customerTable.location === 'object' ? customerTable.location?.name : customerTable.location;
+                            return `${locationName || ''} ${customerTable.name}`;
+                        })()}
+                    </div>
                 </header>
 
                 <div className="flex-1">

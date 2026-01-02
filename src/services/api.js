@@ -39,6 +39,19 @@ export const getBanners = async () => {
     }
 };
 
+export const getTableByQrCode = async (code) => {
+    try {
+        const res = await fetch(`${API_URL}/api/tables/scan/${code}`, { cache: 'no-store' });
+        if (!res.ok) {
+            throw new Error(`Failed to verify table: ${res.statusText}`);
+        }
+        return await res.json();
+    } catch (error) {
+        console.error('Error verifying table:', error);
+        return null;
+    }
+};
+
 export const getImageUrl = (urlOrFilename) => {
     if (!urlOrFilename) return '/assets/logo.png'; // Default placeholder/fallback
 

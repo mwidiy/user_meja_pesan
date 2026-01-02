@@ -1,13 +1,37 @@
 // src/app/page.tsx
-'use client'; 
+'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion'; 
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { getTableByQrCode } from '../services/api';
 
 export default function WelcomePage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [name, setName] = useState('');
+
+    // --- Logic Check Table ID from URL (Silent) ---
+    useEffect(() => {
+        const tableId = searchParams.get('tableId');
+        if (tableId) {
+            const verify = async () => {
+                try {
+                    const data = await getTableByQrCode(tableId);
+                    if (data && data.id) {
+                        localStorage.setItem('customer_table', JSON.stringify(data));
+                        // Optional: Clean URL without reload
+                        const newUrl = new URL(window.location.href);
+                        newUrl.searchParams.delete('tableId');
+                        window.history.replaceState({}, '', newUrl);
+                    }
+                } catch (e) {
+                    console.error("Silent table check failed", e);
+                }
+            };
+            verify();
+        }
+    }, [searchParams]);
 
     const handleStart = () => {
         if (!name.trim()) {
@@ -21,12 +45,12 @@ export default function WelcomePage() {
     // --- 1. Animasi Drawing (Muncul Awal) ---
     const logoContainerVariants = {
         hidden: { opacity: 0, scale: 0.9 },
-        visible: { 
-            opacity: 1, 
+        visible: {
+            opacity: 1,
             scale: 1,
-            transition: { 
+            transition: {
                 duration: 0.5,
-                when: "beforeChildren", 
+                when: "beforeChildren",
                 staggerChildren: 0.15
             }
         }
@@ -34,13 +58,13 @@ export default function WelcomePage() {
 
     const pathDrawingVariants = {
         hidden: { pathLength: 0, fillOpacity: 0, opacity: 0 },
-        visible: { 
-            pathLength: 1, 
+        visible: {
+            pathLength: 1,
             fillOpacity: 1,
             opacity: 1,
-            transition: { 
+            transition: {
                 pathLength: { duration: 1.5, ease: "easeInOut" },
-                fillOpacity: { duration: 0.8, delay: 0.5, ease: "easeOut" }, 
+                fillOpacity: { duration: 0.8, delay: 0.5, ease: "easeOut" },
                 opacity: { duration: 0.1 }
             }
         }
@@ -66,7 +90,7 @@ export default function WelcomePage() {
         ease: "linear", // Perubahan warna patah-patah (robotik)
         // Glitch hanya terjadi di 4% terakhir dari total waktu (detik ke 11.5 - 12)
         // Times array disesuaikan dengan jumlah keyframes di filter (ada 6)
-        times: [0, 0.96, 0.97, 0.98, 0.99, 1], 
+        times: [0, 0.96, 0.97, 0.98, 0.99, 1],
         repeat: Infinity,
         repeatDelay: 0,
         delay: 2.5 // Tunggu drawing selesai
@@ -135,34 +159,34 @@ export default function WelcomePage() {
                 />
 
                 {/* --- BAGIAN LOGO --- */}
-                <motion.div 
+                <motion.div
                     className="logo-section"
                     // 1. ANIMASI FLOATING (Naik Turun Halus) pada container luar
                     animate={{ y: [0, -10, 0] }}
-                    transition={{ 
-                        duration: 4, 
-                        ease: "easeInOut", 
-                        repeat: Infinity, 
+                    transition={{
+                        duration: 4,
+                        ease: "easeInOut",
+                        repeat: Infinity,
                         delay: 2.5 // Mulai floating setelah drawing selesai
                     }}
                 >
-                    <motion.svg 
-                        width="150" 
-                        height="170" 
-                        viewBox="0 0 382 436" 
-                        fill="none" 
+                    <motion.svg
+                        width="150"
+                        height="170"
+                        viewBox="0 0 382 436"
+                        fill="none"
                         xmlns="http://www.w3.org/2000/svg"
                         variants={logoContainerVariants} // Animasi Entrance (Drawing)
-                        
+
                         // 2. ANIMASI GLITCH WARNA (Tanpa Goyang) pada SVG langsung
                         animate={glitchAnimation}
                         transition={glitchTransition}
                     >
                         {/* Group 1: Warna Biru Gelap (Base) */}
-                        <motion.path 
+                        <motion.path
                             variants={pathDrawingVariants}
-                            fill="#1C355A" 
-                            stroke="#1C355A" 
+                            fill="#1C355A"
+                            stroke="#1C355A"
                             strokeWidth="3"
                             d="M267.1 402.5 l-23.3 -23.5 -115.6 0 -115.7 0 0 -182 0 -182 122.3 0 122.3 0 -0.1 58.3 -0.1 58.2 34.1 0.5 34.1 0.5 -0.1 94.9 c0 52.3 -0.2 95.1 -0.3 95.3 -0.2 0.1 -19.8 -19.1 -43.5 -42.7 l-43.2 -43.1 0 -67.9 0 -68 -69.5 0.2 -69.6 0.3 0.1 96.5 c0 53 0.4 96.8 0.9 97.3 0.4 0.4 5.7 0.6 11.7 0.5 l10.9 -0.3 0.3 -32.7 0.2 -32.7 40 0.3 40 0.3 2.6 2.4 c1.5 1.3 4.4 4.2 6.6 6.4 2.2 2.2 28.8 28.9 59.1 59.4 l55.1 55.4 22.2 -0.6 22.2 -0.6 0 36.5 0 36.4 -40.2 0 -40.3 0 -23.2 -23.5z"
                         />
