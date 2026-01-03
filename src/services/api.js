@@ -78,3 +78,24 @@ export const getImageUrl = (urlOrFilename) => {
     // Jika hanya nama file, asumsikan ada di folder uploads backend
     return `${API_URL}/uploads/${urlOrFilename}`;
 };
+
+export const createOrder = async (orderData) => {
+    try {
+        const res = await fetch(`${API_URL}/api/orders`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(orderData),
+        });
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.message || `Failed to create order: ${res.statusText}`);
+        }
+        return await res.json();
+    } catch (error) {
+        console.error('Error creating order:', error);
+        throw error;
+    }
+};

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { productsData } from '../home/productsData';
+import { createOrder } from '../../services/api';
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -15,6 +16,7 @@ export default function CheckoutPage() {
     const [locationDraft, setLocationDraft] = useState('');
     const [notes, setNotes] = useState('');
     const [notesDraft, setNotesDraft] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // load incoming state, and also restore saved location from localStorage if present
     useEffect(() => {
@@ -134,7 +136,10 @@ export default function CheckoutPage() {
     };
 
     // order now -> redirect to payment with state
-    const handleOrderNow = () => {
+    // order now -> redirect to payment with state
+    // order now -> redirect to payment with state
+    // order now -> redirect to payment with state
+    const handleOrderNow = async () => {
         if (!checkoutState.items || checkoutState.items.length === 0) {
             alert('Belum ada pesanan.');
             return;
@@ -145,10 +150,73 @@ export default function CheckoutPage() {
             setTimeout(() => locationInputRef.current?.focus(), 60);
             return;
         }
-        // attach orderType and location to outgoing state
-        const toSend = { ...checkoutState, orderType, location };
-        const stateParam = encodeURIComponent(JSON.stringify(toSend));
-        window.location.href = `/payment?state=${stateParam}`;
+
+        setIsSubmitting(true);
+
+        try {
+            // Priority 1: Direct Storage Access (Real-time)
+            // Mengambil data SESAAT sebelum request dikirim untuk menghindari stale state
+            const storedName = localStorage.getItem('customer_name');
+            const storedTable = localStorage.getItem('customer_table');
+
+            // Falback Logic: Name
+            let finalName = 'Guest';
+            if (storedName && storedName.trim() !== '') {
+                finalName = storedName;
+            }
+
+            // Fallback Logic: Table ID
+            let finalTableId = null;
+            if (storedTable) {
+                try {
+                    const parsed = JSON.parse(storedTable);
+                    if (parsed && parsed.id) {
+                        const numericId = parseInt(parsed.id, 10);
+                        if (!isNaN(numericId)) {
+                            finalTableId = numericId;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Gagal parse storedTable:', e);
+                }
+            }
+
+            // Pastikan Table ID hanya dikirim saat Dine In
+            if (orderType !== 'dinein') {
+                finalTableId = null;
+            }
+
+            // Format Items
+            const formattedItems = checkoutState.items.map(item => ({
+                productId: item.id,
+                quantity: item.qty,
+                price: item.price
+            }));
+
+            // Construct Payload
+            const orderData = {
+                customerName: finalName,
+                tableId: finalTableId,
+                orderType: orderType,
+                items: formattedItems,
+                notes: notes,
+                deliveryLocation: orderType === 'delivery' ? location : null
+            };
+
+            // Execute API
+            const response = await createOrder(orderData);
+
+            if (response && response.data && response.data.id) {
+                router.push(`/payment?orderId=${response.data.id}`);
+            } else {
+                throw new Error('Invalid response structure from server');
+            }
+
+        } catch (error) {
+            console.error('Order failed:', error);
+            alert('Gagal membuat pesanan: ' + (error.message || 'Terjadi kesalahan sistem'));
+            setIsSubmitting(false);
+        }
     };
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
@@ -760,7 +828,9 @@ export default function CheckoutPage() {
                             <div className="summary-row"><span>Subtotal</span><span id="subtotalText">{formatRupiah(checkoutState.subtotal)}</span></div>
                             <div className="summary-row total"><span>Total Pembayaran</span><span className="value" id="totalTextBottom">{formatRupiah(checkoutState.subtotal)}</span></div>
                         </div>
-                        <button className="primary-btn" onClick={() => handleOrderNow()}>Pesan Sekarang</button>
+                        <button className="primary-btn" onClick={handleOrderNow} disabled={isSubmitting}>
+                            {isSubmitting ? 'Memproses...' : 'Pesan Sekarang'}
+                        </button>
                     </div>
                 </div>
             </div>
