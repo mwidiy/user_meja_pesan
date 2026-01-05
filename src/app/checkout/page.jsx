@@ -139,7 +139,7 @@ export default function CheckoutPage() {
     // order now -> redirect to payment with state
     // order now -> redirect to payment with state
     // order now -> redirect to payment with state
-    const handleOrderNow = async () => {
+    const handleOrderNow = () => {
         if (!checkoutState.items || checkoutState.items.length === 0) {
             alert('Belum ada pesanan.');
             return;
@@ -151,72 +151,17 @@ export default function CheckoutPage() {
             return;
         }
 
-        setIsSubmitting(true);
-
-        try {
-            // Priority 1: Direct Storage Access (Real-time)
-            // Mengambil data SESAAT sebelum request dikirim untuk menghindari stale state
-            const storedName = localStorage.getItem('customer_name');
-            const storedTable = localStorage.getItem('customer_table');
-
-            // Falback Logic: Name
-            let finalName = 'Guest';
-            if (storedName && storedName.trim() !== '') {
-                finalName = storedName;
-            }
-
-            // Fallback Logic: Table ID
-            let finalTableId = null;
-            if (storedTable) {
-                try {
-                    const parsed = JSON.parse(storedTable);
-                    if (parsed && parsed.id) {
-                        const numericId = parseInt(parsed.id, 10);
-                        if (!isNaN(numericId)) {
-                            finalTableId = numericId;
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Gagal parse storedTable:', e);
-                }
-            }
-
-            // Pastikan Table ID hanya dikirim saat Dine In
-            if (orderType !== 'dinein') {
-                finalTableId = null;
-            }
-
-            // Format Items
-            const formattedItems = checkoutState.items.map(item => ({
-                productId: item.id,
-                quantity: item.qty,
-                price: item.price
-            }));
-
-            // Construct Payload
-            const orderData = {
-                customerName: finalName,
-                tableId: finalTableId,
-                orderType: orderType,
-                items: formattedItems,
-                notes: notes,
-                deliveryLocation: orderType === 'delivery' ? location : null
-            };
-
-            // Execute API
-            const response = await createOrder(orderData);
-
-            if (response && response.data && response.data.id) {
-                router.push(`/payment?orderId=${response.data.id}`);
-            } else {
-                throw new Error('Invalid response structure from server');
-            }
-
-        } catch (error) {
-            console.error('Order failed:', error);
-            alert('Gagal membuat pesanan: ' + (error.message || 'Terjadi kesalahan sistem'));
-            setIsSubmitting(false);
-        }
+        // Pass data to payment page via URL state
+        // We defer order creation to payment page so we can include paymentMethod
+        const stateData = {
+            items: checkoutState.items,
+            subtotal: checkoutState.subtotal,
+            orderType: orderType,
+            location: orderType === 'delivery' ? location : null, // send location only if delivery
+            notes: notes
+        };
+        const stateParam = encodeURIComponent(JSON.stringify(stateData));
+        router.push(`/payment?state=${stateParam}`);
     };
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
@@ -708,17 +653,18 @@ export default function CheckoutPage() {
                     {orderType === 'delivery' && (
                         <div className={`order-type-location-below show`}>
                             <div className="order-type__location-card" role="group" aria-label="Lokasi Antar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <input
+                                <textarea
                                     ref={locationInputRef}
                                     className="location-input"
-                                    type="text"
-                                    placeholder="Masukkan lokasi antar (mis. Gedung A, Lantai 2, Ruang 205)"
+                                    rows={2}
+                                    placeholder="Masukkan alamat pengiriman lengkap (Jalan, No rumah, Gedung, dll)"
                                     value={location}
                                     onChange={onChangeLocation}
-                                    aria-label="Lokasi Antar"
+                                    aria-label="Alamat Pengiriman"
+                                    style={{ resize: 'none', height: 'auto', minHeight: '46px', paddingTop: 10, fontFamily: 'inherit' }}
                                 />
                                 {/* edit button opens bottom modal for more comfortable editing/saving */}
-                                <button className="edit-btn" aria-label="Edit lokasi" onClick={openLocationModal} title="Edit lokasi">
+                                <button className="edit-btn" aria-label="Edit alamat" onClick={openLocationModal} title="Edit alamat">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
                                 </button>
                             </div>
@@ -733,7 +679,7 @@ export default function CheckoutPage() {
                                 <button onClick={() => setLocationModalOpen(false)} style={{ border: 'none', background: 'transparent', fontSize: 20 }}>×</button>
                             </div>
                             <p style={{ margin: '6px 0 12px', color: '#6B7280' }}>Masukkan detail lokasi antar agar pesanan sampai tepat.</p>
-                            <input className="location-input-big" value={locationDraft} onChange={(e) => setLocationDraft(e.target.value)} placeholder="Contoh: Gedung A, Lantai 2, Ruang 205" />
+                            <textarea className="location-input-big" rows={3} value={locationDraft} onChange={(e) => setLocationDraft(e.target.value)} placeholder="Contoh: Gedung A, Lantai 2, Ruang 205" style={{ resize: 'vertical', fontFamily: 'inherit' }} />
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
                                 <button className="notes-btn-secondary" onClick={() => { setLocationDraft(''); clearLocationFromModal(); }}>Hapus</button>
                                 <button className="notes-btn-primary" onClick={saveLocationFromModal}>Simpan</button>

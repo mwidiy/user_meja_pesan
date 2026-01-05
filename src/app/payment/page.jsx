@@ -1,10 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { createOrder } from '../../services/api';
 
 export default function PaymentPage() {
     const router = useRouter();
-    const [orderState, setOrderState] = useState({ items: [], subtotal: 0 });
+    const [orderState, setOrderState] = useState({ items: [], subtotal: 0, orderType: 'dinein', location: '', notes: '' });
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState('qris');
 
     useEffect(() => {
@@ -15,7 +17,13 @@ export default function PaymentPage() {
             const parsed = JSON.parse(decodeURIComponent(raw));
             const items = Array.isArray(parsed.items) ? parsed.items : [];
             const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
-            setOrderState({ items, subtotal });
+
+            // Extract extra fields passed from checkout
+            const orderType = parsed.orderType || 'dinein';
+            const location = parsed.location || '';
+            const notes = parsed.notes || '';
+
+            setOrderState({ items, subtotal, orderType, location, notes });
         } catch (e) {
             // ignore
         }
@@ -23,12 +31,69 @@ export default function PaymentPage() {
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
 
-    const handleContinue = () => {
-        const stateParam = encodeURIComponent(JSON.stringify(orderState));
-        if (selectedMethod === 'qris') {
-            router.push(`/nota?state=${stateParam}`);
-        } else {
-            router.push(`/kasir?state=${stateParam}`);
+    const handlePay = async () => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
+
+        try {
+            // 1. Ambil data identitas dari localStorage
+            const storedName = localStorage.getItem('customerName'); // Sesuai instruksi: 'customerName'
+            const storedTable = localStorage.getItem('customer_table');
+
+            // Validasi & Default Name
+            const finalName = (storedName && storedName.trim()) ? storedName : "Pelanggan Tanpa Nama";
+
+            // 2. Siapkan tableId
+            let finalTableId = null;
+            if (storedTable) {
+                try {
+                    const parsedTable = JSON.parse(storedTable);
+                    if (parsedTable && parsedTable.id) {
+                        const numericId = parseInt(parsedTable.id, 10);
+                        if (!isNaN(numericId)) finalTableId = numericId;
+                    }
+                } catch (e) {
+                    console.warn("Failed to parse customer_table", e);
+                }
+            }
+
+            // Table ID tetap dikirim apapun orderType-nya (Request User)
+
+            // 3. Construct Body/Payload
+            const payload = {
+                customerName: finalName,
+                tableId: finalTableId,
+                items: orderState.items.map(item => ({
+                    productId: item.id,
+                    quantity: item.qty,
+                    price: item.price
+                })),
+                totalAmount: orderState.subtotal,
+                paymentMethod: selectedMethod,
+                orderType: orderState.orderType,
+                note: orderState.notes,
+                deliveryAddress: orderState.orderType === 'delivery' ? orderState.location : null
+            };
+
+            // Kirim ke Backend
+            const response = await createOrder(payload);
+
+            // Redirect user ke halaman nota/kasir dengan membawa state
+            const stateParam = encodeURIComponent(JSON.stringify(orderState));
+
+            // Kita bisa tambahkan orderId ke URL jika halaman nota mendukung
+            const orderIdParam = response.data && response.data.id ? `&orderId=${response.data.id}` : '';
+
+            if (selectedMethod === 'qris') {
+                router.push(`/nota?state=${stateParam}${orderIdParam}`);
+            } else {
+                router.push(`/kasir?state=${stateParam}${orderIdParam}`);
+            }
+
+        } catch (error) {
+            console.error("Payment submission failed", error);
+            alert("Gagal memproses pesanan: " + (error.message || 'Error'));
+            setIsSubmitting(false);
         }
     };
 
@@ -196,7 +261,9 @@ export default function PaymentPage() {
                         <span><strong>Total Pembayaran</strong></span>
                         <span className="value">{formatRupiah(subtotal)}</span>
                     </div>
-                    <button className="primary-btn" onClick={handleContinue}>Lanjutkan Pembayaran</button>
+                    <button className="primary-btn" onClick={handlePay} disabled={isSubmitting}>
+                        {isSubmitting ? 'Memproses...' : 'Lanjutkan Pembayaran'}
+                    </button>
                     <div className="ssl-row"><span className="ssl-dot" /> <span>Pembayaran dilindungi SSL</span></div>
                 </div>
             </div>
