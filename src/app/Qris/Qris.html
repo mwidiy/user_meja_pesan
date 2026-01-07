@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pembayaran QRIS</title>
+    <meta name="theme-color" content="#2C3E50">
+    <!-- manifest & SW bisa ditambahkan nanti untuk PWA -->
+    <!-- <link rel="manifest" href="./manifest.json"> -->
+
+    <style>
+        :root {
+            --bg-main: #2C3E50;
+            --card-bg: #FFFFFF;
+            --text-main: #1F2937;
+            --text-sub: #64748B;
+            --accent-red: #DC2626;
+            --accent-red-soft: #FEF2F2;
+            --border-soft: #E2E8F0;
+            --yellow: #FACC15;
+        }
+        * {
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+            font-family:'Inter','Poppins',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        }
+        body {
+            min-height:100vh;
+            background:#111827;
+            display:flex;
+            justify-content:center;
+            align-items:flex-start;
+        }
+        .app {
+            width:100%;
+            max-width:414px;
+            min-height:100vh;
+            background:var(--bg-main);
+            color:#fff;
+            position:relative;
+            padding-top:80px;
+            padding-bottom:24px;
+            overflow:hidden;
+        }
+
+        /* HEADER */
+        .qris-header {
+            position:absolute;
+            top:16px;
+            left:0;
+            right:0;
+            display:flex;
+            align-items:center;
+            justify-content:center; /* judul benar-benar di tengah */
+            pointer-events:none;   /* supaya klik default tidak mengganggu; tombol back override */
+        }
+        .btn-back {
+            position:absolute;
+            left:21px;
+            width:36px;
+            height:36px;
+            border-radius:999px;
+            border:none;
+            background:transparent; /* tidak ada kotak/bayangan */
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            cursor:pointer;
+            pointer-events:auto;
+            padding:0;
+        }
+        .btn-back img {
+            width:22px;
+            height:22px;
+            object-fit:contain;
+            display:block;
+        }
+        .header-title-wrap {
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            pointer-events:none;
+        }
+        .header-title {
+            font-size:18px;
+            font-weight:600;
+            color:#FFFFFF;
+        }
+
+        /* CONTAINER */
+        .qris-shell {
+            width:100%;
+            display:flex;
+            justify-content:center;
+            margin-top:8px;
+        }
+        .qris-card-shell {
+            width:327px;
+            height:auto;
+            position:relative;
+        }
+
+        .qris-card {
+            width:295px;
+            margin:0 auto;
+            background:var(--card-bg);
+            border-radius:24px;
+            box-shadow:0 25px 50px rgba(0,0,0,0.25);
+            padding:40px 32px 24px;
+            position:relative;
+        }
+
+        /* Dekor bulatan kiri/kanan */
+        .qris-decoration-left,
+        .qris-decoration-right {
+            width:32px;
+            height:32px;
+            border-radius:50px;
+            background:var(--bg-main);
+            position:absolute;
+            top:304px;
+        }
+        .qris-decoration-left {
+            left:-16px;
+        }
+        .qris-decoration-right {
+            right:-16px;
+        }
+
+        /* TIMER PILL */
+        .timer-pill {
+            width:100%;
+            display:flex;
+            justify-content:center;
+            margin-bottom:24px;
+        }
+        .timer-pill-inner {
+            background:var(--accent-red-soft);
+            border-radius:9999px;
+            padding:10px 24px;
+        }
+        .timer-text {
+            color:var(--accent-red);
+            font-size:14px;
+            font-weight:700;
+            letter-spacing:0.35px;
+            text-align:center;
+        }
+
+        /* AMOUNT */
+        .amount-block {
+            text-align:center;
+            margin-bottom:18px;
+        }
+        .amount-value {
+            font-size:48px;
+            font-weight:900;
+            color:var(--bg-main);
+            line-height:1.1;
+        }
+        .amount-label {
+            margin-top:6px;
+            font-size:14px;
+            font-weight:500;
+            color:var(--text-sub);
+        }
+
+        .divider {
+            width:100%;
+            border-top:2px solid var(--border-soft);
+            margin:12px 0 18px;
+        }
+
+        /* QR CONTAINER */
+        .qr-wrapper {
+            display:flex;
+            justify-content:center;
+            margin-bottom:24px;
+        }
+        .qr-card {
+            width:240px;
+            height:240px;
+            border-radius:16px;
+            background:#ffffff;
+            outline:4px solid #F1F5F9;
+            outline-offset:-4px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+        .qr-inner {
+            width:200px;
+            height:200px;
+            background:#ffffff;
+            border-radius:12px;
+            overflow:hidden;
+            position:relative;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+        .qr-inner img {
+            width:100%;
+            height:100%;
+            object-fit:contain;
+            display:block;
+        }
+
+        /* LOGO QRIS / PAYMENT */
+        .qris-logo-wrap {
+            display:flex;
+            justify-content:center;
+            margin-bottom:20px;
+        }
+        .qris-logo {
+            width:126px;
+            height:48px;
+            object-fit:contain;
+            display:block;
+        }
+
+        /* E-WALLET LOGOS */
+        .wallet-row {
+            display:flex;
+            justify-content:center;
+            gap:8px;
+            margin-bottom:10px;
+        }
+        .wallet-box {
+            width:40px;
+            height:40px;
+            border-radius:8px;
+            background:#E5E7EB;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            overflow:hidden;
+        }
+        .wallet-box img {
+            max-width:100%;
+            max-height:100%;
+            object-fit:contain;
+            display:block;
+        }
+
+        .instruction-text {
+            margin-top:10px;
+            font-size:14px;
+            color:#4B5563;
+            text-align:center;
+            line-height:1.6;
+        }
+
+        /* REFRESH */
+        .refresh-row {
+            margin-top:24px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap:8px;
+            cursor:pointer;
+        }
+        /* perbaiki container icon agar tidak terlihat kotak putih */
+        .refresh-icon {
+            width:18px;
+            height:18px;
+            flex-shrink:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:transparent;     /* pastikan transparan */
+            border:none;                /* tidak ada border */
+            padding:0;                  /* tidak ada padding */
+            border-radius:999px;        /* icon terasa bulat / soft */
+            overflow:hidden;            /* potong tepian putih dari SVG kalau ada */
+        }
+        .refresh-icon img {
+            width:100%;
+            height:100%;
+            object-fit:contain;
+            display:block;
+            background:transparent;     /* kalau UA memberi bg, paksa transparan */
+        }
+        .refresh-text {
+            font-size:14px;
+            font-weight:500;
+            color:#FFFFFF;
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <header class="qris-header">
+        <button class="btn-back" onclick="window.history.back()">
+            <!-- ganti src ini dengan icon back dari kamu -->
+            <img src="./assets/Back.svg" alt="Kembali">
+        </button>
+        <div class="header-title-wrap">
+            <div class="header-title">Pembayaran Qris</div>
+        </div>
+    </header>
+
+    <div class="qris-shell">
+        <div class="qris-card-shell">
+            <div class="qris-card">
+                <!-- left/right cut decorations -->
+                <div class="qris-decoration-left"></div>
+                <div class="qris-decoration-right"></div>
+
+                <!-- Timer -->
+                <div class="timer-pill">
+                    <div class="timer-pill-inner">
+                        <div class="timer-text" id="timerText">Selesaikan dalam 02:32</div>
+                    </div>
+                </div>
+
+                <!-- Amount -->
+                <div class="amount-block">
+                    <div class="amount-value" id="amountValue">Rp 8.000</div>
+                    <div class="amount-label">Total Pembayaran</div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- QR pakai IMG -->
+                <div class="qr-wrapper">
+                    <div class="qr-card">
+                        <div class="qr-inner" id="qrBox">
+                            <!-- Ganti src di sini dengan QR dari backend -->
+                            <img src="./assets/QR_Code.svg" alt="QRIS">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QRIS logo (IMG lokal, bukan placeholder) -->
+                <div class="qris-logo-wrap">
+                    <img src="./assets/Qris_Logo.svg" alt="QRIS" class="qris-logo">
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- E-wallet logos (D, G, O, L sebagai IMG) -->
+                <div class="wallet-row">
+                    <div class="wallet-box">
+                        <img src="./assets/Icon_Q1.svg" alt="Dana">
+                    </div>
+                    <div class="wallet-box">
+                        <img src="./assets/Icon_Q2.svg" alt="GoPay">
+                    </div>
+                    <div class="wallet-box">
+                        <img src="./assets/Icon_Q3.svg" alt="OVO">
+                    </div>
+                    <div class="wallet-box">
+                        <img src="./assets/Icon_Q4.svg" alt="LinkAja">
+                    </div>
+                </div>
+
+                <p class="instruction-text">
+                    Scan QR ini dengan aplikasi E‑Wallet atau Mobile Banking Anda.
+                </p>
+            </div>
+
+            <!-- Refresh QR, icon juga IMG -->
+            <div class="refresh-row" id="btnRefresh">
+                <span class="refresh-icon">
+                    <img src="./assets/Refresh_1.svg" alt="Refresh">
+                </span>
+                <span class="refresh-text">Refresh QR Code</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CONFIG & STATE ---
+    const amountValueEl = document.getElementById('amountValue');
+    const timerTextEl = document.getElementById('timerText');
+    const btnRefresh = document.getElementById('btnRefresh');
+
+    // bisa diisi dari query ?total=8000, fallback 8000
+    function readAmountFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get('total');
+        const num = parseInt(raw, 10);
+        if (isNaN(num) || num <= 0) return 8000;
+        return num;
+    }
+
+    const paymentTotal = readAmountFromQuery();
+    amountValueEl.textContent = 'Rp ' + paymentTotal.toLocaleString('id-ID');
+
+    // Timer 2:32 (152 detik) – hitung mundur
+    let remaining = 152;
+    function formatTime(sec) {
+        const m = String(Math.floor(sec / 60)).padStart(2,'0');
+        const s = String(sec % 60).padStart(2,'0');
+        return `${m}:${s}`;
+    }
+    function updateTimer() {
+        if (remaining <= 0) {
+            timerTextEl.textContent = 'Waktu pembayaran habis';
+            return;
+        }
+        timerTextEl.textContent = 'Selesaikan dalam ' + formatTime(remaining);
+        remaining--;
+    }
+    updateTimer();
+    const timerInterval = setInterval(() => {
+        if (remaining <= 0) {
+            clearInterval(timerInterval);
+            updateTimer();
+        } else {
+            updateTimer();
+        }
+    }, 1000);
+
+    // Refresh QR handler (dummy)
+    btnRefresh.addEventListener('click', () => {
+        remaining = 152;
+        updateTimer();
+        // di sini nanti panggil endpoint backend untuk regenerate QR
+        alert('QR Code diperbarui (dummy).');
+    });
+</script>
+</body>
+</html>

@@ -8,6 +8,7 @@ export default function TrackingPage() {
     const [orderItems, setOrderItems] = useState([]);
     const [queueNumber, setQueueNumber] = useState(() => Math.floor(Math.random() * 5) + 1);
     const [orderStatus, setOrderStatus] = useState('received'); // received | preparing | ready
+    const [paymentStatus, setPaymentStatus] = useState('paid'); // paid | unpaid
     const [estimatedTime, setEstimatedTime] = useState(() => {
         const now = new Date();
         now.setMinutes(now.getMinutes() + 20);
@@ -31,6 +32,7 @@ export default function TrackingPage() {
                 if (parsed.queueNumber) setQueueNumber(parsed.queueNumber);
                 if (parsed.orderStatus) setOrderStatus(parsed.orderStatus);
                 if (parsed.estimatedTime) setEstimatedTime(parsed.estimatedTime);
+                if (parsed.status) setPaymentStatus(parsed.status);
             } else {
                 // demo fallback items
                 setOrderItems([
@@ -179,6 +181,13 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                         </button>
                     </header>
 
+                    {paymentStatus === 'unpaid' && (
+                        <div style={{ background: '#FEF3C7', padding: '10px 20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#92400E' }}>Pesanan belum dibayar. Silakan ke kasir.</span>
+                        </div>
+                    )}
+
                     <main className="main">
                         <section className="div-2" aria-labelledby="order-status-heading">
                             <h2 id="order-status-heading" className="visually-hidden">Status Pesanan</h2>
@@ -289,6 +298,16 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                     <div className="text-wrapper-15">Total Pembayaran</div>
                                     <div className="text-wrapper-16" aria-label={`Total ${formatRupiah(total)}`}>{formatRupiah(total)}</div>
                                 </div>
+                                {paymentStatus === 'unpaid' && (
+                                    <div style={{ marginTop: 12, textAlign: 'center' }}>
+                                        <span style={{
+                                            background: '#FEF3C7', color: '#D97706', padding: '4px 12px', borderRadius: 99,
+                                            fontSize: 12, fontWeight: 700
+                                        }}>
+                                            BELUM DIBAYAR
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </section>
                     </main>
@@ -300,10 +319,25 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                 <span className="text-wrapper-17">Beri Masukan</span>
                             </button>
 
-                            <button className="button-3" type="button" aria-label="Batalkan pesanan" onClick={() => alert('Fitur batalkan pesanan belum tersedia')}>
-                                <svg className="i-7" width="11" height="17" viewBox="0 0 11 17" fill="none" aria-hidden="true"><path d="M8 3V2C8 1.45 7.55 1 7 1H4C3.45 1 3 1.45 3 2V3H1V4H2V13C2 13.55 2.45 14 3 14H8C8.55 14 9 13.55 9 13V4H10V3H8Z" fill="#DC2626" /></svg>
-                                <span className="text-wrapper-18">Batalkan Pesanan</span>
-                            </button>
+                            {paymentStatus === 'unpaid' ? (
+                                <button className="button-3" type="button" aria-label="Bayar Pesanan"
+                                    style={{ borderColor: '#F59E0B', background: '#FEF3C7' }}
+                                    onClick={() => {
+                                        // Go to Kasir page
+                                        const stateParam = encodeURIComponent(JSON.stringify({
+                                            items: orderItems,
+                                            subtotal: total
+                                        }));
+                                        router.push(`/Kasir?state=${stateParam}`);
+                                    }}>
+                                    <span className="text-wrapper-18" style={{ color: '#B45309', fontWeight: '700' }}>Bayar Sekarang</span>
+                                </button>
+                            ) : (
+                                <button className="button-3" type="button" aria-label="Batalkan pesanan" onClick={() => alert('Fitur batalkan pesanan belum tersedia')}>
+                                    <svg className="i-7" width="11" height="17" viewBox="0 0 11 17" fill="none" aria-hidden="true"><path d="M8 3V2C8 1.45 7.55 1 7 1H4C3.45 1 3 1.45 3 2V3H1V4H2V13C2 13.55 2.45 14 3 14H8C8.55 14 9 13.55 9 13V4H10V3H8Z" fill="#DC2626" /></svg>
+                                    <span className="text-wrapper-18">Batalkan Pesanan</span>
+                                </button>
+                            )}
                         </div>
 
                         <button className="button-4" type="button" aria-label="Pesan menu lain" onClick={() => router.push('/home')}>

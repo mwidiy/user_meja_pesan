@@ -79,15 +79,16 @@ export default function PaymentPage() {
             const response = await createOrder(payload);
 
             // Redirect user ke halaman nota/kasir dengan membawa state
-            const stateParam = encodeURIComponent(JSON.stringify(orderState));
-
-            // Kita bisa tambahkan orderId ke URL jika halaman nota mendukung
+            // IMPORTANT: Merge selectedMethod into state so order/page knows it
+            const finalState = { ...orderState, method: selectedMethod };
+            const stateParam = encodeURIComponent(JSON.stringify(finalState));
             const orderIdParam = response.data && response.data.id ? `&orderId=${response.data.id}` : '';
 
             if (selectedMethod === 'qris') {
-                router.push(`/nota?state=${stateParam}${orderIdParam}`);
+                router.push(`/Qris?state=${stateParam}${orderIdParam}`);
             } else {
-                router.push(`/kasir?state=${stateParam}${orderIdParam}`);
+                // Cash -> Order Page (Unpaid)
+                router.push(`/order?state=${stateParam}${orderIdParam}`);
             }
 
         } catch (error) {

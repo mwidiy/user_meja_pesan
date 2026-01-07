@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 
 export default function ReceiptPage() {
     const router = useRouter();
-    const [orderData, setOrderData] = useState({ id: '', items: [], method: 'QRIS', date: '', meta: {} });
+    const [orderData, setOrderData] = useState({ id: '', items: [], method: 'QRIS', date: '', meta: {}, status: 'paid' });
 
     useEffect(() => {
         try {
@@ -19,17 +19,26 @@ export default function ReceiptPage() {
             }
             if (parsed) {
                 const items = Array.isArray(parsed.items) ? parsed.items : [];
-                const method = parsed.orderType || parsed.method || 'QRIS';
+                // Fix: Priority check. 'method' comes from payment page (cash/qris). 'orderType' is dinein/etc.
+                // We should separate them or prioritize 'method' for payment status check.
+                const paymentMethod = parsed.method || 'QRIS';
+                const consumptionMode = parsed.orderType || 'dinein';
+
                 const id = parsed.id || `MP${Date.now()}`;
                 const date = parsed.date || new Date().toISOString();
-                setOrderData({ id, items, method, date, meta: parsed.meta || {} });
+
+                // Status determined by paymentMethod (cash vs qris)
+                const status = (paymentMethod === 'cash') ? 'unpaid' : 'paid';
+
+                // We store 'method' as the paymentMethod for display consistency
+                setOrderData({ id, items, method: paymentMethod, date, meta: parsed.meta || {}, status });
                 return;
             }
         } catch (e) {
             // ignore parse errors
         }
         // fallback empty
-        setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {} });
+        setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {}, status: 'paid' });
     }, []);
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
@@ -116,10 +125,19 @@ export default function ReceiptPage() {
                         <div className="receipt-shell">
                             <div className="receipt-card">
                                 <div className="receipt-header">
-                                    <div className="receipt-header-icon">
-                                        <img src="/assets/sukses.svg" alt="Pembayaran Berhasil" />
+                                    <div className="receipt-header-icon" style={{ backgroundColor: orderData.status === 'unpaid' ? '#FEF3C7' : '#FFFFFF' }}>
+                                        {orderData.status === 'unpaid' ? (
+                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <polyline points="12 6 12 12 16 14" />
+                                            </svg>
+                                        ) : (
+                                            <img src="/assets/sukses.svg" alt="Pembayaran Berhasil" />
+                                        )}
                                     </div>
-                                    <div className="receipt-header-title">Pembayaran Berhasil!</div>
+                                    <div className="receipt-header-title" style={{ color: orderData.status === 'unpaid' ? '#FFF' : '#FFFFFF' }}>
+                                        {orderData.status === 'unpaid' ? 'Menunggu Pembayaran' : 'Pembayaran Berhasil!'}
+                                    </div>
                                 </div>
 
                                 <div className="receipt-body">
@@ -162,7 +180,12 @@ export default function ReceiptPage() {
                                         </div>
                                         <div className="info-row">
                                             <span className="info-label">Status</span>
-                                            <span className="status-pill">LUNAS</span>
+                                            <span className="status-pill" style={{
+                                                backgroundColor: orderData.status === 'unpaid' ? '#FEF3C7' : '#DCFCE7',
+                                                color: orderData.status === 'unpaid' ? '#D97706' : '#15803D'
+                                            }}>
+                                                {orderData.status === 'unpaid' ? 'BELUM DIBAYAR' : 'LUNAS'}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -179,7 +202,14 @@ export default function ReceiptPage() {
                     </div>
 
                     <div className="bottom-bar">
-                        <button className="track-btn" onClick={() => router.push('/lacak')}>
+                        <button className="track-btn" onClick={() => {
+                            // Pass state to waiting page
+                            const stateParam = encodeURIComponent(JSON.stringify({
+                                items: orderData.items,
+                                status: orderData.status
+                            }));
+                            router.push(`/waiting?state=${stateParam}`);
+                        }}>
                             <span className="track-btn-icon">
                                 <img src="/assets/gps.svg" alt="Lacak" />
                             </span>
