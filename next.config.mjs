@@ -18,8 +18,12 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'http',
-        hostname: '192.168.1.6',
-        port: '3000',
+        hostname: process.env.NEXT_PUBLIC_API_URL
+          ? new URL(process.env.NEXT_PUBLIC_API_URL).hostname
+          : 'localhost',
+        port: process.env.NEXT_PUBLIC_API_URL
+          ? new URL(process.env.NEXT_PUBLIC_API_URL).port
+          : '3000',
       },
     ],
   },

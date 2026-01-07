@@ -1,7 +1,22 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+// --- SMART CONFIGURATION ---
+// Default (Server-Side)
+let API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+// Client-Side: AUTO-DETECT IP
+// Ini membuat PWA otomatis tahu dia dibuka di IP mana (misal 192.168.1.5)
+// dan langsung menebak Backend ada di IP yang sama (port 3000).
+// User GAK PERLU ganti .env lagi!
+if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol; // http:
+    const host = window.location.hostname;     // 192.168.1.X
+    // Asumsi Backend selalu di Port 3000 dengan IP yang sama
+    API_URL = `${protocol}//${host}:3000`;
+    console.log("🚀 Auto-Detected API URL:", API_URL);
+}
 
 export const getProducts = async () => {
     try {
+        console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products`);
         const res = await fetch(`${API_URL}/api/products`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to fetch products: ${res.statusText}`);
@@ -41,6 +56,7 @@ export const getBanners = async () => {
 
 export const getTableByQrCode = async (code) => {
     try {
+        console.log("🔍 [Debug] Fetching Table Scan:", `${API_URL}/api/tables/scan/${code}`);
         const res = await fetch(`${API_URL}/api/tables/scan/${code}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to verify table: ${res.statusText}`);
@@ -61,12 +77,11 @@ export const getImageUrl = (urlOrFilename) => {
             const apiUrlObj = new URL(API_URL);
             const imgUrlObj = new URL(urlOrFilename);
 
-            // Jika image dari localhost, kita 'paksa' ganti host-nya ke IP API_URL
-            // agar bisa diakses dari HP (yang tidak kenal localhost laptop)
-            if (imgUrlObj.hostname === 'localhost' || imgUrlObj.hostname === '127.0.0.1') {
+            // Force replace localhost/127.0.0.1 with API_URL hostname
+            if (['localhost', '127.0.0.1'].includes(imgUrlObj.hostname)) {
                 imgUrlObj.protocol = apiUrlObj.protocol;
                 imgUrlObj.hostname = apiUrlObj.hostname;
-                imgUrlObj.port = apiUrlObj.port;
+                imgUrlObj.port = apiUrlObj.port; // Ensure port matches API (3000)
                 return imgUrlObj.toString();
             }
             return urlOrFilename;
