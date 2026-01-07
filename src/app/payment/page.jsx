@@ -70,6 +70,7 @@ export default function PaymentPage() {
                 })),
                 totalAmount: orderState.subtotal,
                 paymentMethod: selectedMethod,
+                paymentStatus: 'Unpaid',
                 orderType: orderState.orderType,
                 note: orderState.notes,
                 deliveryAddress: orderState.orderType === 'delivery' ? orderState.location : null
