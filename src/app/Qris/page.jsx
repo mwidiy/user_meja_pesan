@@ -7,8 +7,18 @@ export default function QrisPage() {
     const [amount, setAmount] = useState(8000);
     const [remaining, setRemaining] = useState(152);
     const [orderState, setOrderState] = useState(null);
+    const [qrisUrl, setQrisUrl] = useState(null);
 
     useEffect(() => {
+        // Fetch Store QRIS
+        import('../../services/api').then(mod => {
+            mod.getStore().then(res => {
+                if (res && res.success && res.data && res.data.qrisImage) {
+                    setQrisUrl(mod.getImageUrl(res.data.qrisImage));
+                }
+            });
+        });
+
         // Read props from URL state if available (for "Next" flow)
         try {
             const params = new URLSearchParams(window.location.search);
@@ -380,7 +390,12 @@ export default function QrisPage() {
                             <div className="qr-wrapper">
                                 <div className="qr-card">
                                     <div className="qr-inner">
-                                        <img src="/assets/QR_Code.svg" alt="QRIS" />
+                                        <img src={qrisUrl || "/assets/QR_Code.svg"} alt="QRIS"
+                                            onError={(e) => {
+                                                e.target.onerror = null;
+                                                e.target.src = '/assets/QR_Code.svg';
+                                            }}
+                                        />
                                     </div>
                                 </div>
                             </div>

@@ -19,9 +19,10 @@ export default function HomePixelPerfect() {
     const bannerRef = useRef(null);
 
     // --- STATE ---
-    const [products, setProducts] = useState([]); // Pastikan initialized array kosong
-    const [categories, setCategories] = useState([]); // Pastikan initialized array kosong
-    const [banners, setBanners] = useState([]); // Pastikan initialized array kosong
+    const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [banners, setBanners] = useState([]);
+    const [store, setStore] = useState(null); // Add Store State
     const [isLoading, setIsLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState('all');
 
@@ -32,6 +33,17 @@ export default function HomePixelPerfect() {
     const [customerTable, setCustomerTable] = useState(null);
 
     // --- FETCH FUNCTIONS (INDEPENDENT) ---
+    const fetchDataStore = async () => {
+        try {
+            const storeRes = await import('../../services/api').then(mod => mod.getStore());
+            if (storeRes && storeRes.success) {
+                setStore(storeRes.data);
+            }
+        } catch (error) {
+            console.error('Error fetching store:', error);
+        }
+    };
+
     const fetchDataProducts = async () => {
         try {
             const prodsRes = await getProducts();
@@ -41,7 +53,6 @@ export default function HomePixelPerfect() {
             setProducts(productsData);
         } catch (error) {
             console.error('Error fetching products:', error);
-            // Optional: setProducts([]) jika ingin reset saat error
         }
     };
 
@@ -75,6 +86,7 @@ export default function HomePixelPerfect() {
             setIsLoading(true);
             try {
                 await Promise.all([
+                    fetchDataStore(), // Fetch Store
                     fetchDataProducts(),
                     fetchDataCategories(),
                     fetchDataBanners()
@@ -437,11 +449,16 @@ export default function HomePixelPerfect() {
                 <header className="header">
                     <div className="flex items-center gap-[8px]">
                         <div className="h-[38px] max-w-[140px] flex items-center">
-                            <img src="/assets/logo.png" alt="Logo" className="h-full w-auto object-contain"
-                                onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.innerText = 'Logo' }}
+                            <img
+                                src={store?.logo ? getImageUrl(store.logo) : "/assets/logo.png"}
+                                alt="Logo"
+                                className="h-full w-auto object-contain"
+                                onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.innerText = store?.name || 'Resto'; }}
                             />
                         </div>
-                        <span className="font-semibold text-[0.9rem] text-[#6B7280]">Logo</span>
+                        <span className="font-semibold text-[0.9rem] text-[#6B7280]">
+                            {store?.name || 'Dapur QuackXel'}
+                        </span>
                     </div>
                     <div className="badge">
                         {(() => {

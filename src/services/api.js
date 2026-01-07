@@ -68,6 +68,17 @@ export const getTableByQrCode = async (code) => {
     }
 };
 
+export const getStore = async () => {
+    try {
+        const res = await fetch(`${API_URL}/api/store`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Failed to fetch store: ${res.statusText}`);
+        return await res.json();
+    } catch (error) {
+        console.error('Error fetching store:', error);
+        return null; // Return null so UI can use default
+    }
+};
+
 export const getImageUrl = (urlOrFilename) => {
     if (!urlOrFilename) return '/assets/logo.png'; // Default placeholder/fallback
 
