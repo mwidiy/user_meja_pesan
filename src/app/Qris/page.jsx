@@ -9,6 +9,9 @@ export default function QrisPage() {
     const [orderState, setOrderState] = useState(null);
     const [qrisUrl, setQrisUrl] = useState(null);
 
+    const [orderId, setOrderId] = useState(null);
+    const [isPaid, setIsPaid] = useState(false);
+
     useEffect(() => {
         // Fetch Store QRIS
         import('../../services/api').then(mod => {
@@ -19,10 +22,14 @@ export default function QrisPage() {
             });
         });
 
-        // Read props from URL state if available (for "Next" flow)
+        // Read props from URL
         try {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
+            const idParam = params.get('orderId'); // Read orderId from URL
+
+            if (idParam) setOrderId(idParam);
+
             if (raw) {
                 const parsed = JSON.parse(decodeURIComponent(raw));
                 setOrderState(parsed);
@@ -36,6 +43,47 @@ export default function QrisPage() {
         return () => clearInterval(interval);
     }, []);
 
+    // POLLING CHECK STATUS
+    useEffect(() => {
+        if (!orderId) return;
+
+        const checkStatus = async () => {
+            try {
+                // Gunakan URL API dari environment atau relatif
+                const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+                const res = await fetch(`${API_URL}/api/orders/${orderId}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success && json.data) {
+                        const order = json.data;
+                        // Cek status pembayaran
+                        if (order.paymentStatus === 'Paid') {
+                            setIsPaid(true);
+                            handleAutoRedirect(order);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+            }
+        };
+
+        const pollInterval = setInterval(checkStatus, 3000); // Cek setiap 3 detik
+        return () => clearInterval(pollInterval);
+    }, [orderId]);
+
+    const handleAutoRedirect = (order) => {
+        // Prepare state for next page
+        // We can merge order info from backend or use existing orderState
+        const finalState = {
+            ...orderState,
+            status: 'paid', // Force valid status
+            id: order.transactionCode || orderId // Use real transaction code if available
+        };
+        const stateParam = encodeURIComponent(JSON.stringify(finalState));
+        router.push(`/order?state=${stateParam}`);
+    };
+
     const formatTime = (sec) => {
         const m = String(Math.floor(sec / 60)).padStart(2, '0');
         const s = String(sec % 60).padStart(2, '0');
@@ -43,6 +91,7 @@ export default function QrisPage() {
     };
 
     const handleNext = () => {
+        // Manual override (Optional)
         // User finished payment (simulated), go to Order page
         if (orderState) {
             const stateParam = encodeURIComponent(JSON.stringify(orderState));

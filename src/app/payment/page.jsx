@@ -81,15 +81,20 @@ export default function PaymentPage() {
 
             // Redirect user ke halaman nota/kasir dengan membawa state
             // IMPORTANT: Merge selectedMethod into state so order/page knows it
-            const finalState = { ...orderState, method: selectedMethod };
+            // ALSO: Pass transactionCode from backend response to enable QR generation
+            const finalState = {
+                ...orderState,
+                method: selectedMethod,
+                transactionCode: response.data.transactionCode // <--- Added this
+            };
             const stateParam = encodeURIComponent(JSON.stringify(finalState));
             const orderIdParam = response.data && response.data.id ? `&orderId=${response.data.id}` : '';
 
             if (selectedMethod === 'qris') {
                 router.push(`/Qris?state=${stateParam}${orderIdParam}`);
             } else {
-                // Cash -> Order Page (Unpaid)
-                router.push(`/order?state=${stateParam}${orderIdParam}`);
+                // Cash -> Kasir Page (For Scanning)
+                router.push(`/Kasir?state=${stateParam}${orderIdParam}`);
             }
 
         } catch (error) {

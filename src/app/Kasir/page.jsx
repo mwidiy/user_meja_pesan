@@ -1,25 +1,36 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import QRCode from 'react-qr-code';
 
-export default function KasirPage() {
+function KasirContent() {
     const router = useRouter();
-    const [amount, setAmount] = useState(8000);
-    const [orderCode, setOrderCode] = useState('#MP-12A47Z');
+    const searchParams = useSearchParams();
+    const [amount, setAmount] = useState(0);
+    const [orderCode, setOrderCode] = useState('-');
+    const [tableNumber, setTableNumber] = useState('-');
+    const [customerName, setCustomerName] = useState('-');
+    // Removed qrUrl state
 
     useEffect(() => {
         try {
-            const params = new URLSearchParams(window.location.search);
-            const raw = params.get('state');
+            const raw = searchParams.get('state');
             if (raw) {
                 const parsed = JSON.parse(decodeURIComponent(raw));
-                // Set amount and maybe ID if available
+                // parsed example: { id: 123, subtotal: 156500, tableId: 12, tableName: "Meja 12", customerName: "Ahmad", transactionCode: "TRX-..." }
+
                 if (parsed.subtotal) setAmount(parsed.subtotal);
-                // Generate a random code or use ID if available
-                if (parsed.id) setOrderCode('#' + parsed.id);
+                if (parsed.transactionCode) {
+                    setOrderCode(parsed.transactionCode);
+                    // QR is generated on the fly via QRCode component
+                }
+                if (parsed.tableName) setTableNumber(parsed.tableName);
+                if (parsed.customerName) setCustomerName(parsed.customerName);
             }
-        } catch (e) { }
-    }, []);
+        } catch (e) {
+            console.error("Error parsing state:", e);
+        }
+    }, [searchParams]);
 
     const copyCode = () => {
         navigator.clipboard.writeText(orderCode).then(() => {
@@ -28,6 +39,90 @@ export default function KasirPage() {
             alert('Kode: ' + orderCode);
         });
     };
+
+    return (
+        <div className="kasir-shell">
+            <div className="kasir-card-shell">
+                <div className="kasir-main-card">
+                    <div className="kasir-decoration-left"></div>
+                    <div className="kasir-decoration-right"></div>
+
+                    <div className="status-pill-wrap">
+                        <div className="status-pill">
+                            <div className="status-text">Menunggu Pembayaran</div>
+                        </div>
+                    </div>
+
+                    <div className="amount-block">
+                        <div className="amount-value">Rp {amount.toLocaleString('id-ID')}</div>
+                        <div className="amount-label">Total Pembayaran</div>
+                    </div>
+
+                    <div className="divider"></div>
+
+                    <div className="qr-wrapper">
+                        <div className="qr-card">
+                            <div className="qr-inner" style={{ padding: '16px' }}>
+                                <QRCode
+                                    value={orderCode !== '-' ? orderCode : 'Loading...'}
+                                    size={256}
+                                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                    viewBox={`0 0 256 256`}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="order-code-row">
+                        <span className="order-code-text">{orderCode}</span>
+                        <button className="copy-btn" onClick={copyCode} title="Salin kode">
+                            <img src="/assets/Salin_Icon.svg" alt="Salin" />
+                        </button>
+                    </div>
+
+                    <div className="divider"></div>
+
+                    <div className="meta-row">
+                        <div className="meta-inner">
+                            <span className="meta-icon-table">
+                                <img src="/assets/Kursi_Icon.svg" alt="Meja" />
+                            </span>
+                            <span>{tableNumber}</span>
+                            <span className="meta-separator">•</span>
+                            <span>Atas Nama <span className="meta-strong">{customerName}</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bottom-info">
+                    <div className="info-card dark">
+                        <div className="info-row-flex">
+                            <div className="info-icon">
+                                <img src="/assets/Information_Icon.svg" alt="Info Kasir" />
+                            </div>
+                            <div className="info-text-wrap">
+                                Tunjukkan kode ini kepada kasir<br />untuk diproses.
+                            </div>
+                        </div>
+                    </div>
+                    <div className="info-card yellow">
+                        <div className="info-row-flex">
+                            <div className="info-icon">
+                                <img src="/assets/Danger_Icon.svg" alt="Info Pembayaran" />
+                            </div>
+                            <div className="info-text-wrap soft">
+                                Pesanan diproses setelah<br />pembayaran.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default function KasirPage() {
+    const router = useRouter();
 
     return (
         <>
@@ -99,7 +194,6 @@ export default function KasirPage() {
             padding:0;
         }
 
-        /* back pakai img, biar bisa kamu ganti sendiri */
         .btn-back img {
             width:22px;
             height:22px;
@@ -367,78 +461,9 @@ export default function KasirPage() {
                     </div>
                 </header>
 
-                <div className="kasir-shell">
-                    <div className="kasir-card-shell">
-                        <div className="kasir-main-card">
-                            <div className="kasir-decoration-left"></div>
-                            <div className="kasir-decoration-right"></div>
-
-                            <div className="status-pill-wrap">
-                                <div className="status-pill">
-                                    <div className="status-text">Menunggu Pembayaran</div>
-                                </div>
-                            </div>
-
-                            <div className="amount-block">
-                                <div className="amount-value">Rp {amount.toLocaleString('id-ID')}</div>
-                                <div className="amount-label">Total Pembayaran</div>
-                            </div>
-
-                            <div className="divider"></div>
-
-                            <div className="qr-wrapper">
-                                <div className="qr-card">
-                                    <div className="qr-inner">
-                                        <img src="/assets/QR_Code.svg" alt="QR Kasir" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="order-code-row">
-                                <span className="order-code-text">{orderCode}</span>
-                                <button className="copy-btn" onClick={copyCode} title="Salin kode">
-                                    <img src="/assets/Salin_Icon.svg" alt="Salin" />
-                                </button>
-                            </div>
-
-                            <div className="divider"></div>
-
-                            <div className="meta-row">
-                                <div className="meta-inner">
-                                    <span className="meta-icon-table">
-                                        <img src="/assets/Kursi_Icon.svg" alt="Meja" />
-                                    </span>
-                                    <span>Meja 12</span>
-                                    <span className="meta-separator">•</span>
-                                    <span>Atas Nama <span className="meta-strong">Ahmad</span></span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bottom-info">
-                            <div className="info-card dark">
-                                <div className="info-row-flex">
-                                    <div className="info-icon">
-                                        <img src="/assets/Information_Icon.svg" alt="Info Kasir" />
-                                    </div>
-                                    <div className="info-text-wrap">
-                                        Tunjukkan kode ini kepada kasir<br />untuk diproses.
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="info-card yellow">
-                                <div className="info-row-flex">
-                                    <div className="info-icon">
-                                        <img src="/assets/Danger_Icon.svg" alt="Info Pembayaran" />
-                                    </div>
-                                    <div className="info-text-wrap soft">
-                                        Pesanan diproses setelah<br />pembayaran.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <Suspense fallback={<div>Loading...</div>}>
+                    <KasirContent />
+                </Suspense>
             </div>
         </>
     );
