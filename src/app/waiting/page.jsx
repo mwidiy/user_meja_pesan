@@ -9,6 +9,7 @@ export default function TrackingPage() {
     const [queueNumber, setQueueNumber] = useState(() => Math.floor(Math.random() * 5) + 1);
     const [orderStatus, setOrderStatus] = useState('received'); // received | preparing | ready
     const [paymentStatus, setPaymentStatus] = useState('paid'); // paid | unpaid
+    const [transactionCode, setTransactionCode] = useState('-'); // Added missing state
     const [estimatedTime, setEstimatedTime] = useState(() => {
         const now = new Date();
         now.setMinutes(now.getMinutes() + 20);
@@ -33,6 +34,7 @@ export default function TrackingPage() {
                 if (parsed.orderStatus) setOrderStatus(parsed.orderStatus);
                 if (parsed.estimatedTime) setEstimatedTime(parsed.estimatedTime);
                 if (parsed.status) setPaymentStatus(parsed.status);
+                if (parsed.transactionCode) setTransactionCode(parsed.transactionCode); // Added extraction
             } else {
                 // demo fallback items
                 setOrderItems([
@@ -326,7 +328,8 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                         // Go to Kasir page
                                         const stateParam = encodeURIComponent(JSON.stringify({
                                             items: orderItems,
-                                            subtotal: total
+                                            subtotal: total,
+                                            transactionCode: transactionCode // Pass valid code
                                         }));
                                         router.push(`/Kasir?state=${stateParam}`);
                                     }}>

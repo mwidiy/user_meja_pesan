@@ -31,14 +31,22 @@ export default function ReceiptPage() {
                 const status = (paymentMethod === 'cash') ? 'unpaid' : 'paid';
 
                 // We store 'method' as the paymentMethod for display consistency
-                setOrderData({ id, items, method: paymentMethod, date, meta: parsed.meta || {}, status });
+                setOrderData({
+                    id,
+                    items,
+                    method: paymentMethod,
+                    date,
+                    meta: parsed.meta || {},
+                    status,
+                    transactionCode: parsed.transactionCode // Store it
+                });
                 return;
             }
         } catch (e) {
             // ignore parse errors
         }
         // fallback empty
-        setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {}, status: 'paid' });
+        setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {}, status: 'paid', transactionCode: '-' });
     }, []);
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
@@ -206,7 +214,8 @@ export default function ReceiptPage() {
                             // Pass state to waiting page
                             const stateParam = encodeURIComponent(JSON.stringify({
                                 items: orderData.items,
-                                status: orderData.status
+                                status: orderData.status,
+                                transactionCode: orderData.transactionCode // Pass legacy code
                             }));
                             router.push(`/waiting?state=${stateParam}`);
                         }}>

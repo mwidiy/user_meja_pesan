@@ -93,8 +93,10 @@ export default function PaymentPage() {
             if (selectedMethod === 'qris') {
                 router.push(`/Qris?state=${stateParam}${orderIdParam}`);
             } else {
-                // Cash -> Kasir Page (For Scanning)
-                router.push(`/Kasir?state=${stateParam}${orderIdParam}`);
+                // Cash -> Order Page (Unpaid) - NEW FLOW
+                // Ensure transactionCode is in stateParam (it was added above)
+                // Override status if needed, but 'unpaid' is default for cash
+                router.push(`/order?state=${stateParam}${orderIdParam}`);
             }
 
         } catch (error) {

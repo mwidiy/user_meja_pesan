@@ -10,7 +10,54 @@ function KasirContent() {
     const [orderCode, setOrderCode] = useState('-');
     const [tableNumber, setTableNumber] = useState('-');
     const [customerName, setCustomerName] = useState('-');
+
     // Removed qrUrl state
+
+    // Helper for params
+    const getOrderStateParams = (updatedOrder) => {
+        // Construct state exactly as needed by Waiting Page
+        return encodeURIComponent(JSON.stringify({
+            items: updatedOrder.items || [], // Items usually sent in update event? Check backend. Backend update sends full order with items.
+            status: 'paid', // Explicitly paid now
+            transactionCode: updatedOrder.transactionCode
+        }));
+    };
+
+    useEffect(() => {
+        // Socket.IO Logic
+        // We need to connect to the BACKEND URL, not PWA URL.
+        // Assuming backend is at port 3000 based on previous context (http://192.168.1.4:3000)
+        // Ideally use env var, but hardcoding for now as per project style
+        const socket = require('socket.io-client')('http://192.168.1.4:3000');
+
+        socket.on('connect', () => {
+            console.log("Connected to socket for payment updates");
+        });
+
+        socket.on('order_status_updated', (data) => {
+            console.log("Order update received:", data);
+            // Verify this update is for OUR order
+            if (data.transactionCode === orderCode || (orderCode !== '-' && data.transactionCode === orderCode)) {
+                if (data.paymentStatus === 'Paid') {
+                    // Redirect to Waiting Page
+                    const stateParam = encodeURIComponent(JSON.stringify({
+                        items: data.items,
+                        status: 'paid'
+                    }));
+                    router.push(`/waiting?state=${stateParam}`);
+                }
+            }
+        });
+
+        // Also listen for connect_error
+        socket.on('connect_error', (err) => {
+            console.log("Socket connection error:", err);
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [orderCode, router]); // Re-run if orderCode changes (which happens once at start)
 
     useEffect(() => {
         try {
