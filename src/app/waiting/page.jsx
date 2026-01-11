@@ -1,22 +1,83 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getOrderByTransactionCode, getImageUrl } from '../../services/api';
+import { io } from 'socket.io-client';
 
 export default function TrackingPage() {
     const router = useRouter();
 
     const [orderItems, setOrderItems] = useState([]);
-    const [queueNumber, setQueueNumber] = useState(() => Math.floor(Math.random() * 5) + 1);
+    const [queueNumber, setQueueNumber] = useState('-'); // Waiting for data
+    const [ordersAhead, setOrdersAhead] = useState(0); // New State
     const [orderStatus, setOrderStatus] = useState('received'); // received | preparing | ready
     const [paymentStatus, setPaymentStatus] = useState('paid'); // paid | unpaid
     const [transactionCode, setTransactionCode] = useState('-'); // Added missing state
-    const [estimatedTime, setEstimatedTime] = useState(() => {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() + 20);
-        return now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    });
+    const [estimatedTime, setEstimatedTime] = useState('-');
+    const [timeLeft, setTimeLeft] = useState(null); // (mm:ss) countdown
+
+    // Data Fetcher Helper
+    const refreshOrderData = (code) => {
+        if (!code || code === '-') return;
+        getOrderByTransactionCode(code).then(res => {
+            if (res && res.success && res.data) {
+                const order = res.data;
+                // 1. Sync State
+                if (order.items && order.items.length > 0) {
+                    const mappedItems = order.items.map(item => ({
+                        name: item.product.name,
+                        price: item.priceSnapshot,
+                        qty: item.quantity,
+                        image: item.product.image ? getImageUrl(item.product.image) : '/assets/placeholder.png'
+                    }));
+                    setOrderItems(mappedItems);
+                }
+                setPaymentStatus(order.paymentStatus === 'Paid' ? 'paid' : 'unpaid');
+
+                // Map Backend Status to Frontend Stepper
+                let mappedStatus = 'received';
+                if (order.status === 'Processing') mappedStatus = 'preparing';
+                else if (order.status === 'Completed' || order.status === 'Ready') mappedStatus = 'ready';
+
+                setOrderStatus(mappedStatus);
+
+                // 3. SMART QUEUE 4.0 LOGIC
+                // Realtime big number = My Queue Position (1, 2, 3...)
+                if (order.queuePosition) {
+                    setQueueNumber(String(order.queuePosition));
+                } else if (order.queueNumber) {
+                    // Fallback if queuePosition not sent (just in case)
+                    setQueueNumber(String(order.queueNumber));
+                }
+
+                // Status Text Logic
+                if (order.status === 'Pending') {
+                    setOrdersAhead(`Antrean ke-${order.queuePosition}`);
+                    // Prediction available?
+                    if (res.data.predictedServiceTime) {
+                        setEstimatedTime(`Selesai jam ${res.data.predictedServiceTime}`);
+                    }
+                } else if (order.status === 'Processing') {
+                    // User Request: "kalo udh di konfirmasi kasir (Processing) antrainya ngak perlu ada"
+                    // We hide quantity of people ahead, but show Status
+                    setOrdersAhead("Sedang Disiapkan");
+                    // Show prediction
+                    if (res.data.predictedServiceTime) {
+                        setEstimatedTime(`Selesai jam ${res.data.predictedServiceTime}`);
+                    }
+                } else {
+                    // Completed/Ready
+                    setOrdersAhead("Pesanan Selesai");
+                    setEstimatedTime(null); // Hide prediction
+                }
+            }
+        }).catch(err => console.error("Error refreshing data:", err));
+    };
 
     useEffect(() => {
+        let currentCode = null;
+
+        // 1. Initial Load from URL or LocalStorage
         try {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
@@ -28,39 +89,59 @@ export default function TrackingPage() {
             }
 
             if (parsed) {
-                const items = Array.isArray(parsed.items) ? parsed.items : [];
-                setOrderItems(items);
+                if (parsed.items) setOrderItems(parsed.items);
                 if (parsed.queueNumber) setQueueNumber(parsed.queueNumber);
-                if (parsed.orderStatus) setOrderStatus(parsed.orderStatus);
-                if (parsed.estimatedTime) setEstimatedTime(parsed.estimatedTime);
-                if (parsed.status) setPaymentStatus(parsed.status);
-                if (parsed.transactionCode) setTransactionCode(parsed.transactionCode); // Added extraction
+                if (parsed.transactionCode) {
+                    currentCode = parsed.transactionCode;
+                    setTransactionCode(currentCode);
+                    refreshOrderData(currentCode);
+                }
             } else {
-                // demo fallback items
+                // Demo Data
                 setOrderItems([
-                    { name: 'Teh Manis', price: 3000, qty: 1, image: '/assets/Nasi_Katsu.png' },
-                    { name: 'Es Beng Beng', price: 5000, qty: 1, image: '/assets/Nasi_Omelet.png' }
+                    { name: 'Teh Manis', price: 3000, qty: 1, image: '/assets/placeholder.png' },
+                    { name: 'Es Beng Beng', price: 5000, qty: 1, image: '/assets/placeholder.png' }
                 ]);
             }
         } catch (e) {
-            // ignore
+            console.error("Error parsing state:", e);
         }
+
+        // 2. Socket Setup
+        // Connect to Backend URL specifically
+        const socket = io('http://192.168.1.4:3000'); // Ensure this matches backend port
+
+        socket.on('connect', () => {
+            console.log('🔌 Connected to socket for updates');
+        });
+
+        // Listen for ANY order update (to update queue position)
+        socket.on('order_status_updated', (updatedOrder) => {
+            console.log('🔔 Order Update Event:', updatedOrder);
+            if (currentCode) {
+                refreshOrderData(currentCode);
+            }
+        });
+
+        // 3. Polling Fallback (Every 15s)
+        const pollInterval = setInterval(() => {
+            if (currentCode) refreshOrderData(currentCode);
+        }, 15000);
+
+        return () => {
+            socket.disconnect();
+            clearInterval(pollInterval);
+        };
     }, []);
 
-    // optional: simulate status progression
-    useEffect(() => {
-        const steps = ['received', 'preparing', 'ready'];
-        let idx = steps.indexOf(orderStatus);
-        const t = setInterval(() => {
-            if (idx < steps.length - 1) {
-                idx += 1;
-                setOrderStatus(steps[idx]);
-            } else {
-                clearInterval(t);
-            }
-        }, 40000);
-        return () => clearInterval(t);
-    }, [orderStatus]);
+    // Format Countdown (mm:ss) // Removed
+    // const formatTimeLeft = (seconds) => {
+    //     if (seconds === null) return "";
+    //     if (seconds <= 0) return "Sebentar lagi...";
+    //     const m = Math.floor(seconds / 60);
+    //     const s = seconds % 60;
+    //     return `${m}:${s.toString().padStart(2, '0')}`;
+    // };
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
 
@@ -204,11 +285,26 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                     </div>
 
                                     <div className="div-4">
-                                        <div className="div-5">
-                                            <div className="text-wrapper-2" aria-label={`${queueNumber} pesanan dalam antrean`}>{queueNumber}</div>
+                                        <div className="div-5" style={{ marginTop: (orderStatus === 'ready' || orderStatus === 'preparing') ? 54 : 54 }}>
+                                            {orderStatus === 'ready' ? (
+                                                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                                    <polyline points="22 4 12 14.01 9 11.01" />
+                                                </svg>
+                                            ) : orderStatus === 'preparing' ? (
+                                                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z" />
+                                                    <line x1="6" y1="17" x2="18" y2="17" />
+                                                </svg>
+                                            ) : (
+                                                <div className="text-wrapper-2" aria-label={`Urutan ke ${queueNumber}`}>{queueNumber}</div>
+                                            )}
                                         </div>
                                         <div className="div-6">
-                                            <div className="text-wrapper-3">Antrean Kamu</div>
+                                            <div className="text-wrapper-3">
+                                                {orderStatus === 'ready' ? "Pesanan Selesai" :
+                                                    orderStatus === 'preparing' ? "Sedang Dimasak" : "Urutan Antrean"}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -216,35 +312,54 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
 
                             <div className="div-7">
                                 <nav className="div-8" aria-label="Tahapan pesanan">
+                                    {/* STEP 1: DITERIMA */}
                                     <div className="div-9">
-                                        <div className="i-wrapper" aria-label="Pesanan diterima - selesai">
-                                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                                        <div className="i-wrapper" style={{ background: '#22C55E' }}>
+                                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                                                 <path d="M4 10L8 14L16 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                             </svg>
                                         </div>
                                         <div className="text-wrapper-4">Pesanan Diterima</div>
                                     </div>
 
-                                    <div className={orderStatus === 'preparing' || orderStatus === 'ready' ? 'div-10' : 'div-14'} role="separator" aria-hidden="true" />
+                                    {/* LINE 1 */}
+                                    <div className={orderStatus === 'preparing' || orderStatus === 'ready' ? 'div-10' : 'div-14'} />
 
+                                    {/* STEP 2: DIPROSES */}
                                     <div className="div-11">
-                                        <div className={orderStatus === 'preparing' || orderStatus === 'ready' ? 'div-12' : 'div-16'} aria-label="Sedang disiapkan - dalam proses">
-                                            <svg className="i-2" width="18" height="20" viewBox="0 0 18 20" fill="none" aria-hidden="true">
+                                        <div className={orderStatus === 'preparing' || orderStatus === 'ready' ? 'div-12' : 'div-16'} style={{
+                                            background: (orderStatus === 'preparing' || orderStatus === 'ready') ? '#F59E0B' : '#E5E7EB'
+                                        }}>
+                                            <svg className="i-2" width="18" height="20" viewBox="0 0 18 20" fill="none">
+                                                {/* Chef Hat / Cooking Icon */}
                                                 <path d="M9 2L2 6V10C2 14.5 5 18 9 18C13 18 16 14.5 16 10V6L9 2Z" fill="white" />
                                             </svg>
                                         </div>
                                         <div className="text-wrapper-5">Sedang Disiapkan</div>
                                     </div>
 
-                                    <div className={orderStatus === 'ready' ? 'div-10' : 'div-14'} role="separator" aria-hidden="true" />
+                                    {/* LINE 2 */}
+                                    <div className={orderStatus === 'ready' ? 'div-10' : 'div-14'} />
 
+                                    {/* STEP 3: SELESAI */}
                                     <div className="div-15">
-                                        <div className="div-16" aria-label="Siap diantar - belum dimulai">
-                                            <svg className="i-3" width="14" height="20" viewBox="0 0 14 20" fill="none" aria-hidden="true">
-                                                <path d="M12 8H10V2H4V8H2L7 13L12 8Z" fill="#9CA3AF" />
-                                            </svg>
+                                        <div className={orderStatus === 'ready' ? 'i-wrapper' : 'div-16'} style={{
+                                            background: orderStatus === 'ready' ? '#22C55E' : '#E5E7EB'
+                                        }}>
+                                            {/* CHECKMARK if ready, else Bag */}
+                                            {orderStatus === 'ready' ? (
+                                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                                    <path d="M4 10L8 14L16 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                </svg>
+                                            ) : (
+                                                <svg className="i-3" width="14" height="20" viewBox="0 0 14 20" fill="none">
+                                                    <path d="M12 8H10V2H4V8H2L7 13L12 8Z" fill="#9CA3AF" />
+                                                </svg>
+                                            )}
                                         </div>
-                                        <div className="text-wrapper-6">Siap Diantar</div>
+                                        <div className="text-wrapper-6" style={{
+                                            color: orderStatus === 'ready' ? '#111827' : '#9CA3AF', fontWeight: orderStatus === 'ready' ? 600 : 400
+                                        }}>Pesanan Selesai</div>
                                     </div>
                                 </nav>
                             </div>
@@ -254,8 +369,17 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                     <circle cx="9" cy="9" r="8" stroke="#F59E0B" strokeWidth="2" />
                                     <path d="M9 5V9L12 12" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
                                 </svg>
-                                <span className="span">Estimasi Selesai:</span>
-                                <span className="span-2"><time className="text-wrapper-8" dateTime={estimatedTime}>{estimatedTime} WIB</time></span>
+                                <span className="span">Status:</span>
+                                <span className="span-2">
+                                    <span style={{ display: 'block', color: '#D97706', fontWeight: '800', fontSize: 18 }}>
+                                        {ordersAhead || "Menunggu Konfirmasi"}
+                                    </span>
+                                    {estimatedTime && (
+                                        <span style={{ display: 'block', fontSize: 14, color: '#059669', marginTop: 4 }}>
+                                            🕑 {estimatedTime}
+                                        </span>
+                                    )}
+                                </span>
                             </div>
                         </section>
 

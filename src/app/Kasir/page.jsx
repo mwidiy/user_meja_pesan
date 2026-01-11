@@ -39,11 +39,13 @@ function KasirContent() {
             // Verify this update is for OUR order
             if (data.transactionCode === orderCode || (orderCode !== '-' && data.transactionCode === orderCode)) {
                 if (data.paymentStatus === 'Paid') {
-                    // Redirect to Waiting Page
+                    // Redirect to Waiting Page with FULL data
                     const stateParam = encodeURIComponent(JSON.stringify({
                         items: data.items,
-                        status: 'paid'
+                        status: 'paid',
+                        transactionCode: data.transactionCode // CRITICAL FIX
                     }));
+                    console.log("Redirecting to waiting with code:", data.transactionCode);
                     router.push(`/waiting?state=${stateParam}`);
                 }
             }

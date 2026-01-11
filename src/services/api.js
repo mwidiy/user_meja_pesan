@@ -125,3 +125,17 @@ export const createOrder = async (orderData) => {
         throw error;
     }
 };
+
+export const getOrderByTransactionCode = async (code) => {
+    try {
+        console.log("🔍 [Debug] Fetching Order by Code:", `${API_URL}/api/orders/code/${code}`);
+        const res = await fetch(`${API_URL}/api/orders/code/${code}`, { cache: 'no-store' });
+        if (!res.ok) {
+            throw new Error(`Failed to fetch order: ${res.statusText}`);
+        }
+        return await res.json();
+    } catch (error) {
+        console.error('Error fetching order by code:', error);
+        return null;
+    }
+};
