@@ -166,3 +166,19 @@ export const getOrdersByBatch = async (codes) => {
         return { success: false, data: [] };
     }
 };
+
+// --- CANCELLATION ---
+export const cancelOrder = async (transactionCode, reason) => {
+    const API_URL = getDynamicUrl();
+    try {
+        const res = await fetch(`${API_URL}/api/orders/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transactionCode, reason })
+        });
+        return await res.json();
+    } catch (error) {
+        console.error('Error cancelling order:', error);
+        throw error;
+    }
+};
