@@ -89,11 +89,12 @@ export const getImageUrl = (urlOrFilename) => {
             const apiUrlObj = new URL(API_URL);
             const imgUrlObj = new URL(urlOrFilename);
 
-            // Force replace localhost/127.0.0.1 with API_URL hostname
-            if (['localhost', '127.0.0.1'].includes(imgUrlObj.hostname)) {
+            // Force replace localhost OR any old IP/hostname with the current API_URL hostname
+            // This fixes issues if DB has 'http://192.168.1.4:3000' but we are now on '192.168.1.8'
+            if (imgUrlObj.hostname !== apiUrlObj.hostname || imgUrlObj.port !== apiUrlObj.port) {
                 imgUrlObj.protocol = apiUrlObj.protocol;
                 imgUrlObj.hostname = apiUrlObj.hostname;
-                imgUrlObj.port = apiUrlObj.port; // Ensure port matches API (3000)
+                imgUrlObj.port = apiUrlObj.port;
                 return imgUrlObj.toString();
             }
             return urlOrFilename;
