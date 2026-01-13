@@ -64,6 +64,10 @@ export default function TrackingPage() {
                 setOrderStatus(mappedStatus);
                 setCancellationStatus(order.cancellationStatus);
                 setRefundStatus(order.refundStatus);
+                // Also set the cancellation reason if available (for Admin Rejection display)
+                if (order.cancellationReason) {
+                    setCancelReason(order.cancellationReason);
+                }
 
                 // 3. SMART QUEUE 4.0 LOGIC
                 if (order.queuePosition) {
@@ -358,6 +362,18 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                     )}
                                 </span>
                             </div>
+                            {/* Cancellation Reason Display */}
+                            {(orderStatus === 'cancelled' && cancellationStatus === 'RejectedByAdmin') && (
+                                <div style={{ margin: '12px 24px 0', padding: '12px', background: '#FEF2F2', borderRadius: 12, border: '1px solid #FECACA' }}>
+                                    <p style={{ fontSize: 12, fontWeight: 600, color: '#DC2626' }}>
+                                        ⚠️ Pesanan Dibatalkan Kasir
+                                    </p>
+                                    <p style={{ fontSize: 14, color: '#7F1D1D', marginTop: 4 }}>
+                                        {/* Since backend returns reason in cancellationReason field */}
+                                        Alasan: {cancelReason || "Tidak ada alasan spesifik"}
+                                    </p>
+                                </div>
+                            )}
                         </section>
 
                         <section className="div-20">
@@ -433,16 +449,27 @@ body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-con
                                 <span className="text-wrapper-17">Beri Masukan</span>
                             </button>
                             {paymentStatus === 'unpaid' ? (
-                                <button className="button-3" type="button" style={{ borderColor: '#F59E0B', background: '#FEF3C7' }} onClick={() => {
-                                    const stateParam = encodeURIComponent(JSON.stringify({
-                                        items: orderItems,
-                                        subtotal: total,
-                                        transactionCode: transactionCode
-                                    }));
-                                    router.push(`/Kasir?state=${stateParam}`);
-                                }}>
-                                    <span style={{ color: '#B45309', fontWeight: '700', fontSize: 14 }}>Bayar Sekarang</span>
-                                </button>
+                                <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+                                    <button
+                                        className="button-3"
+                                        type="button"
+                                        onClick={() => setShowCancelModal(true)}
+                                        style={{ flex: 1, borderColor: '#DC2626', color: '#DC2626', background: 'white' }}
+                                    >
+                                        <svg className="i-7" width="11" height="17" viewBox="0 0 11 17" fill="none"><path d="M8 3V2C8 1.45 7.55 1 7 1H4C3.45 1 3 1.45 3 2V3H1V4H2V13C2 13.55 2.45 14 3 14H8C8.55 14 9 13.55 9 13V4H10V3H8Z" fill="#DC2626" /></svg>
+                                        <span className="text-wrapper-18" style={{ color: '#DC2626' }}>Batal</span>
+                                    </button>
+                                    <button className="button-3" type="button" style={{ flex: 2, borderColor: '#F59E0B', background: '#FEF3C7' }} onClick={() => {
+                                        const stateParam = encodeURIComponent(JSON.stringify({
+                                            items: orderItems,
+                                            subtotal: total,
+                                            transactionCode: transactionCode
+                                        }));
+                                        router.push(`/Kasir?state=${stateParam}`);
+                                    }}>
+                                        <span style={{ color: '#B45309', fontWeight: '700', fontSize: 14 }}>Bayar Sekarang</span>
+                                    </button>
+                                </div>
                             ) : (
                                 orderStatus !== 'cancelled' && orderStatus !== 'ready' && (
                                     <button
