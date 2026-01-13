@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { io } from 'socket.io-client';
-import { getProducts, getCategories, getBanners, getImageUrl } from '../../services/api';
+import { getProducts, getCategories, getBanners, getImageUrl, getDynamicUrl } from '../../services/api';
 import ProductDetailModal from './ProductDetailModal';
 
 const formatRupiah = (price) => {
@@ -104,8 +104,10 @@ export default function HomePixelPerfect() {
     // --- SOCKET.IO LISTENER ---
     useEffect(() => {
         // Inisialisasi koneksi Socket.io
-        // Gunakan process.env.NEXT_PUBLIC_API_URL atau default localhost jika undefined
-        const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        // Initialize Socket.io with Dynamic URL
+        const socketUrl = getDynamicUrl();
+        console.log("🔌 Socket connecting to:", socketUrl);
+
         const socket = io(socketUrl, {
             transports: ['websocket'],
             reconnection: true,

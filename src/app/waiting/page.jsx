@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getOrderByTransactionCode, getImageUrl } from '../../services/api';
+import { getOrderByTransactionCode, getImageUrl, getDynamicUrl } from '../../services/api';
 import { io } from 'socket.io-client';
 
 export default function TrackingPage() {
@@ -22,6 +22,17 @@ export default function TrackingPage() {
         getOrderByTransactionCode(code).then(res => {
             if (res && res.success && res.data) {
                 const order = res.data;
+
+                // 0. AUTO-SAVE to History (Redundancy Fix)
+                try {
+                    const currentHistory = JSON.parse(localStorage.getItem('order_history') || '[]');
+                    if (order.transactionCode && !currentHistory.includes(order.transactionCode)) {
+                        currentHistory.push(order.transactionCode);
+                        localStorage.setItem('order_history', JSON.stringify(currentHistory));
+                        console.log("✅ Auto-saved order to history:", order.transactionCode);
+                    }
+                } catch (e) { console.error("History save error:", e); }
+
                 // 1. Sync State
                 if (order.items && order.items.length > 0) {
                     const mappedItems = order.items.map(item => ({
@@ -109,7 +120,8 @@ export default function TrackingPage() {
 
         // 2. Socket Setup
         // Connect to Backend URL specifically
-        const socket = io('http://192.168.1.4:3000'); // Ensure this matches backend port
+        // Connect to Backend URL specifically
+        const socket = io(getDynamicUrl()); // Ensure this matches backend port
 
         socket.on('connect', () => {
             console.log('🔌 Connected to socket for updates');

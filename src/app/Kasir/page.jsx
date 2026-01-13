@@ -2,6 +2,8 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import QRCode from 'react-qr-code';
+import { io } from 'socket.io-client';
+import { getDynamicUrl } from '../../services/api';
 
 function KasirContent() {
     const router = useRouter();
@@ -26,9 +28,9 @@ function KasirContent() {
     useEffect(() => {
         // Socket.IO Logic
         // We need to connect to the BACKEND URL, not PWA URL.
-        // Assuming backend is at port 3000 based on previous context (http://192.168.1.4:3000)
+        // Assuming backend is at port 3000 based on previous context 
         // Ideally use env var, but hardcoding for now as per project style
-        const socket = require('socket.io-client')('http://192.168.1.4:3000');
+        const socket = io(getDynamicUrl());
 
         socket.on('connect', () => {
             console.log("Connected to socket for payment updates");
@@ -45,6 +47,18 @@ function KasirContent() {
                         status: 'paid',
                         transactionCode: data.transactionCode // CRITICAL FIX
                     }));
+
+                    // SAVE TO LOCAL STORAGE FOR MULTIPLE ORDERS
+                    try {
+                        const currentHistory = JSON.parse(localStorage.getItem('order_history') || '[]');
+                        if (!currentHistory.includes(data.transactionCode)) {
+                            currentHistory.push(data.transactionCode);
+                            localStorage.setItem('order_history', JSON.stringify(currentHistory));
+                        }
+                    } catch (e) {
+                        console.error("Error saving to history:", e);
+                    }
+
                     console.log("Redirecting to waiting with code:", data.transactionCode);
                     router.push(`/waiting?state=${stateParam}`);
                 }

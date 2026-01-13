@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { getDynamicUrl } from '../../services/api';
 
 export default function QrisPage() {
     const router = useRouter();
@@ -50,7 +51,7 @@ export default function QrisPage() {
         const checkStatus = async () => {
             try {
                 // Gunakan URL API dari environment atau relatif
-                const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+                const API_URL = getDynamicUrl();
                 const res = await fetch(`${API_URL}/api/orders/${orderId}`);
                 if (res.ok) {
                     const json = await res.json();

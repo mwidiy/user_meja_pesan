@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8" />
+    <title>Status Pesanan Saya</title>
+    <style>
+      :root {
+        --bg-page: #F9FAFB;
+        --bg-card: #FFFFFF;
+        --text-main: #1A2332;
+        --text-sub: #6B7280;
+        --text-muted: #9E9E9E;
+        --primary-yellow: #F0C419;
+        --primary-yellow-soft: #F0C41933;
+        --tab-bg: #F3F4F6;
+        --status-blue-bg: #EFF6FF;
+        --status-blue: #2563EB;
+        --border-soft: #CED4DA;
+        --border-card: #F3F4F6;
+        --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        min-height: 100vh;
+        background:#FFFFFF;
+        display:flex;
+        justify-content:center;
+        align-items:flex-start;
+      }
+
+      .frame {
+        display:inline-flex;
+        flex-direction:column;
+        align-items:flex-start;
+        background-color:#FFFFFF;
+        border:2px solid var(--border-soft);
+        border-radius:8px;
+        overflow:hidden;
+      }
+
+      .body {
+        width:375px;
+        height:812px;
+        background-color:var(--bg-page);
+      }
+
+      .div {
+        height:100%;
+        display:flex;
+        flex-direction:column;
+        background-color:#FFFFFF;
+      }
+
+      /* HEADER */
+      .header {
+        width:100%;
+        height:60px;
+        display:flex;
+        align-items:center;
+        justify-content:center;      /* judul di tengah */
+        background-color:#FFFFFF;
+        box-shadow:var(--shadow-xs);
+        padding:0 16px;
+        position:relative;
+      }
+      .button {
+        position:absolute;
+        left:16px;
+        width:28px;
+        height:28px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border:none;
+        background:none;
+        padding:0;
+        cursor:pointer;
+      }
+      /* back pakai IMG dari aset kamu */
+      .button img {
+        width:22px;
+        height:22px;
+        object-fit:contain;
+        display:block;
+      }
+
+      /* span .i/.svg/.vector-wrapper tidak lagi dipakai untuk back, tapi biarkan kalau dipakai di tempat lain */
+      .i {
+        width:18px;
+        height:24px;
+        display:flex;
+      }
+      .svg {
+        width:18px;
+        height:20px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .vector-wrapper {
+        width:18px;
+        height:20px;
+        position:relative;
+      }
+      .vector {
+        position:absolute;
+        width:100%;
+        height:75%;
+        top:12.5%;
+        left:0;
+      }
+
+      .h {
+        /* judul di tengah dengan flex */
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        flex:1;
+      }
+      .text-wrapper {
+        font-size:18px;
+        font-weight:700;
+        color:var(--text-main);
+        text-align:center;
+      }
+
+      /* TAB FILTER */
+      .section {
+        width:100%;
+        height:76px;
+        display:flex;
+        align-items:center;
+        background-color:#FFFFFF;
+        box-shadow:var(--shadow-xs);
+      }
+      .div-2 {
+        width:343px;
+        margin:16px auto 0;
+        display:flex;
+        gap:12px;
+      }
+      .div-wrapper,
+      .button-2 {
+        all:unset;
+        box-sizing:border-box;
+        width:50%;
+        height:44px;
+        border-radius:9999px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        cursor:pointer;
+      }
+      .div-wrapper {
+        background-color:var(--primary-yellow);
+      }
+      .text-wrapper-2 {
+        font-size:14px;
+        font-weight:600;
+        text-align:center;
+        color:var(--text-main);
+      }
+      .button-2 {
+        background-color:var(--tab-bg);
+      }
+      .text-wrapper-3 {
+        font-size:14px;
+        font-weight:600;
+        text-align:center;
+        color:#4B5563;
+      }
+
+      /* MAIN */
+      .main {
+        flex:1;
+        display:flex;
+        flex-direction:column;
+      }
+
+      /* CARD PESANAN */
+      .div-3 {
+        width:343px;
+        height:184px;
+        margin:16px auto 0;
+        display:flex;
+        flex-direction:column;
+        gap:12px;
+        background-color:#FFFFFF;
+        border-radius:16px;
+        border:1px solid var(--border-card);
+        box-shadow:var(--shadow-xs);
+        padding-bottom:12px;
+      }
+      .div-4 {
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        margin:17px 17px 0;
+      }
+      .div-5 {
+        display:flex;
+        gap:12px;
+      }
+
+      .i-wrapper {
+        width:40px;
+        height:40px;
+        border-radius:9999px;
+        background-color:var(--primary-yellow-soft);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        overflow:hidden;
+      }
+      /* icon pesanan pakai IMG sekarang */
+      .i-wrapper img {
+        width:24px;
+        height:24px;
+        object-fit:contain;
+        display:block;
+      }
+
+      /* svg-wrapper/frame-wrapper/div-6 tidak dipakai lagi untuk icon, bisa dibiarkan jika ada referensi lain */
+      .svg-wrapper {
+        width:13.5px;
+        height:28px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .frame-wrapper {
+        width:13.5px;
+        height:18px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .div-6 {
+        /* ...bisa dikosongkan atau dibiarkan, tidak lagi untuk icon utama... */
+      }
+
+      .div-7 {
+        display:flex;
+        flex-direction:column;
+        gap:2px;
+      }
+      .text-wrapper-4 {
+        font-size:16px;
+        font-weight:700;
+        color:var(--text-main);
+      }
+      .text-wrapper-5 {
+        font-size:12px;
+        color:var(--text-sub);
+      }
+
+      .button-3 {
+        width:24px;
+        height:28px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        border:none;
+        background:none;
+        padding:0;
+        cursor:pointer;
+      }
+      .i-2 {
+        width:11.25px;
+        height:21px;
+        display:flex;
+      }
+      .svg-2 {
+        width:11.25px;
+        height:18px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .img-wrapper {
+        width:11.25px;
+        height:18px;
+        position:relative;
+      }
+      .img {
+        position:absolute;
+        width:80%;
+        height:88%;
+        top:6%;
+        left:20%;
+      }
+
+      .p-wrapper {
+        margin:0 17px;
+        height:44px;
+        background-color:var(--bg-page);
+        border-radius:12px;
+        display:flex;
+        align-items:center;
+        padding:0 12px;
+      }
+      .p {
+        font-size:14px;
+        color:var(--text-main);
+      }
+      .text-wrapper-6 {
+        /* same as p, kept for semantics */
+      }
+
+      .div-8 {
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        margin:0 17px;
+        margin-top:4px;
+      }
+      .span-wrapper {
+        flex-shrink:0;
+      }
+      .span {
+        display:flex;
+        align-items:center;
+        gap:6px;
+        padding:4px 12px;
+        border-radius:9999px;
+        background-color:var(--status-blue-bg);
+      }
+      .i-3 {
+        width:10px;
+        height:16px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .svg-3 {
+        width:10px;
+        height:10px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .div-9 {
+        width:10px;
+        height:10px;
+        background-image:url(./img/image.svg);
+        background-size:100% 100%;
+      }
+      .text-wrapper-7 {
+        font-size:12px;
+        font-weight:600;
+        color:var(--status-blue);
+      }
+
+      .div-10 {
+        display:flex;
+        flex-direction:column;
+        align-items:flex-end;
+      }
+      .text-wrapper-8 {
+        font-size:12px;
+        color:var(--text-sub);
+      }
+      .text-wrapper-9 {
+        font-size:16px;
+        font-weight:700;
+        color:var(--text-main);
+      }
+
+      /* ILLUSTRASI & CTA */
+      .div-11 {
+        width:128px;
+        height:128px;
+        margin:81px auto 0;
+        display:block;
+      }
+
+      .text-wrapper-10 {
+        margin-top:35px;
+        text-align:center;
+        font-size:20px;
+        font-weight:700;
+        color:#424242;
+      }
+
+      .text-wrapper-11 {
+        margin-top:18px;
+        margin-inline:25px;
+        text-align:center;
+        font-size:14px;
+        color:var(--text-muted);
+        line-height:23px;
+      }
+
+      .button-4 {
+        all:unset;
+        box-sizing:border-box;
+        width:311px;
+        height:56px;
+        margin:18.5px auto 0;
+        border-radius:9999px;
+        background-color:var(--primary-yellow);
+        box-shadow:var(--shadow-xs);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        cursor:pointer;
+      }
+      .text-wrapper-12 {
+        font-size:16px;
+        font-weight:700;
+        color:#424242;
+        text-align:center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <main class="body">
+        <div class="div">
+          <header class="header">
+            <button class="button" aria-label="Kembali" onclick="window.history.back()">
+              <!-- ganti src dengan icon back milikmu -->
+              <img src="./assets/kembali.svg" alt="Kembali" />
+            </button>
+            <h1 class="h">
+              <span class="text-wrapper">Status Pesanan Saya</span>
+            </h1>
+          </header>
+
+          <nav class="section" aria-label="Filter status pesanan">
+            <div class="div-2" role="tablist">
+
+              <button class="div-wrapper"
+                      role="tab"
+                      aria-selected="true"
+                      aria-controls="panel-sedang-diproses"
+                      id="tab-sedang-diproses">
+                <span class="text-wrapper-2">Sedang Diproses</span>
+              </button>
+
+              <button class="button-2"
+                      role="tab"
+                      aria-selected="false"
+                      aria-controls="panel-selesai"
+                      id="tab-selesai"
+                      onclick="window.location.href='selesai.html'">
+                <span class="text-wrapper-3">Selesai</span>
+              </button>
+
+            </div>
+          </nav>
+
+
+          <section class="main" role="tabpanel" id="panel-sedang-diproses" aria-labelledby="tab-sedang-diproses">
+            <article class="div-3" onclick="window.location.href='lacak.html'" style="cursor:pointer;">
+              <div class="div-4">
+                <div class="div-5">
+                  <span class="i-wrapper" aria-hidden="true">
+                    <!-- icon pesanan pakai IMG -->
+                    <img src="./assets/Card_Icon.svg" alt="" />
+                  </span>
+                  <div class="div-7">
+                    <h2 class="text-wrapper-4">Pesanan #0510</h2>
+                    <time class="text-wrapper-5" datetime="PT15M">Dipesan 15 menit lalu</time>
+                  </div>
+                </div>
+                <button class="button-3" aria-label="Lihat detail pesanan">
+                  <!-- ...existing arrow icon... -->
+                  <span class="i-2">
+                    <span class="svg-2">
+                      <span class="img-wrapper"><img class="img" src="img/vector.svg" alt="" /></span>
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              <div class="p-wrapper">
+                <p class="p">
+                  <span class="text-wrapper-6">1x Es Beng Beng, 1x Es Teh Manis</span>
+                </p>
+              </div>
+
+              <div class="div-8">
+                <div class="span-wrapper">
+                  <span class="span">
+                    <span class="i-3" aria-hidden="true">
+                      <span class="svg-3"><span class="div-9"></span></span>
+                    </span>
+                    <span class="text-wrapper-7">Sedang Disiapkan</span>
+                  </span>
+                </div>
+                <div class="div-10">
+                  <span class="text-wrapper-8">Total</span>
+                  <span class="text-wrapper-9">Rp 8.000</span>
+                </div>
+              </div>
+            </article>
+
+            <img class="div-11" src="./assets/Plus_Icon.svg" alt="Ilustrasi menunggu pesanan" />
+            <h3 class="text-wrapper-10">Selagi menunggu..</h3>
+            <p class="text-wrapper-11">Siapa tahu masih ada menu yang ingin kamu coba.</p>
+            <button class="button-4" type="button" onclick="window.location.href='home.html'">
+              <span class="text-wrapper-12">Pesan Menu Lain</span>
+            </button>
+          </section>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

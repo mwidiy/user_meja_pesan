@@ -1,20 +1,16 @@
 // --- SMART CONFIGURATION ---
-// Default (Server-Side)
-let API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-// Client-Side: AUTO-DETECT IP
-// Ini membuat PWA otomatis tahu dia dibuka di IP mana (misal 192.168.1.5)
-// dan langsung menebak Backend ada di IP yang sama (port 3000).
-// User GAK PERLU ganti .env lagi!
-if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol; // http:
-    const host = window.location.hostname;     // 192.168.1.X
-    // Asumsi Backend selalu di Port 3000 dengan IP yang sama
-    API_URL = `${protocol}//${host}:3000`;
-    console.log("🚀 Auto-Detected API URL:", API_URL);
-}
+// Helper untuk mendapatkan URL Dynamic secara Runtime
+export const getDynamicUrl = () => {
+    if (typeof window !== 'undefined') {
+        const protocol = window.location.protocol;
+        const host = window.location.hostname;
+        return `${protocol}//${host}:3000`;
+    }
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+};
 
 export const getProducts = async () => {
+    const API_URL = getDynamicUrl(); // Calculate NOW
     try {
         console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products`);
         const res = await fetch(`${API_URL}/api/products`, { cache: 'no-store' });
@@ -29,6 +25,7 @@ export const getProducts = async () => {
 };
 
 export const getCategories = async () => {
+    const API_URL = getDynamicUrl();
     try {
         const res = await fetch(`${API_URL}/api/categories`, { cache: 'no-store' });
         if (!res.ok) {
@@ -42,6 +39,7 @@ export const getCategories = async () => {
 };
 
 export const getBanners = async () => {
+    const API_URL = getDynamicUrl();
     try {
         const res = await fetch(`${API_URL}/api/banners?status=active`, { cache: 'no-store' });
         if (!res.ok) {
@@ -55,6 +53,7 @@ export const getBanners = async () => {
 };
 
 export const getTableByQrCode = async (code) => {
+    const API_URL = getDynamicUrl();
     try {
         console.log("🔍 [Debug] Fetching Table Scan:", `${API_URL}/api/tables/scan/${code}`);
         const res = await fetch(`${API_URL}/api/tables/scan/${code}`, { cache: 'no-store' });
@@ -69,6 +68,7 @@ export const getTableByQrCode = async (code) => {
 };
 
 export const getStore = async () => {
+    const API_URL = getDynamicUrl();
     try {
         const res = await fetch(`${API_URL}/api/store`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`Failed to fetch store: ${res.statusText}`);
@@ -80,6 +80,7 @@ export const getStore = async () => {
 };
 
 export const getImageUrl = (urlOrFilename) => {
+    const API_URL = getDynamicUrl();
     if (!urlOrFilename) return '/assets/logo.png'; // Default placeholder/fallback
 
     // Jika URL lengkap (ada http/https)
@@ -106,6 +107,7 @@ export const getImageUrl = (urlOrFilename) => {
 };
 
 export const createOrder = async (orderData) => {
+    const API_URL = getDynamicUrl();
     try {
         const res = await fetch(`${API_URL}/api/orders`, {
             method: 'POST',
@@ -127,6 +129,7 @@ export const createOrder = async (orderData) => {
 };
 
 export const getOrderByTransactionCode = async (code) => {
+    const API_URL = getDynamicUrl();
     try {
         console.log("🔍 [Debug] Fetching Order by Code:", `${API_URL}/api/orders/code/${code}`);
         const res = await fetch(`${API_URL}/api/orders/code/${code}`, { cache: 'no-store' });
@@ -137,5 +140,28 @@ export const getOrderByTransactionCode = async (code) => {
     } catch (error) {
         console.error('Error fetching order by code:', error);
         return null;
+    }
+};
+
+export const getOrdersByBatch = async (codes) => {
+    const API_URL = getDynamicUrl();
+    try {
+        console.log("🔍 [Debug] Fetching Batch Orders:", `${API_URL}/api/orders/batch`);
+        const res = await fetch(`${API_URL}/api/orders/batch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ codes }),
+            cache: 'no-store'
+        });
+
+        if (!res.ok) {
+            throw new Error(`Failed to fetch batch orders: ${res.statusText}`);
+        }
+        return await res.json();
+    } catch (error) {
+        console.error('Error fetching batch orders:', error);
+        return { success: false, data: [] };
     }
 };
