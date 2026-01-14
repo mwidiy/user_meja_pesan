@@ -43,14 +43,20 @@ export default function PaymentPage() {
             // Validasi & Default Name
             const finalName = (storedName && storedName.trim()) ? storedName : "Pelanggan Tanpa Nama";
 
-            // 2. Siapkan tableId
+            // 2. Siapkan tableId & StoreId
             let finalTableId = null;
+            let finalStoreId = orderState.storeId || null; // Try from state first
+
             if (storedTable) {
                 try {
                     const parsedTable = JSON.parse(storedTable);
                     if (parsedTable && parsedTable.id) {
                         const numericId = parseInt(parsedTable.id, 10);
                         if (!isNaN(numericId)) finalTableId = numericId;
+                    }
+                    // Fallback Store ID if not in state
+                    if (!finalStoreId && parsedTable.location && parsedTable.location.storeId) {
+                        finalStoreId = parsedTable.location.storeId;
                     }
                 } catch (e) {
                     console.warn("Failed to parse customer_table", e);
@@ -63,6 +69,7 @@ export default function PaymentPage() {
             const payload = {
                 customerName: finalName,
                 tableId: finalTableId,
+                storeId: finalStoreId, // <--- Send Store ID
                 items: orderState.items.map(item => ({
                     productId: item.id,
                     quantity: item.qty,

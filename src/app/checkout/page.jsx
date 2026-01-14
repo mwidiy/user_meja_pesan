@@ -153,12 +153,26 @@ export default function CheckoutPage() {
 
         // Pass data to payment page via URL state
         // We defer order creation to payment page so we can include paymentMethod
+
+        // 1. Get StoreID from localStorage
+        let storeId = null;
+        try {
+            const storedTable = localStorage.getItem('customer_table');
+            if (storedTable) {
+                const parsed = JSON.parse(storedTable);
+                if (parsed.location && parsed.location.storeId) {
+                    storeId = parsed.location.storeId;
+                }
+            }
+        } catch (e) { }
+
         const stateData = {
             items: checkoutState.items,
             subtotal: checkoutState.subtotal,
             orderType: orderType,
             location: orderType === 'delivery' ? location : null, // send location only if delivery
-            notes: notes
+            notes: notes,
+            storeId: storeId // <--- Pass Store ID
         };
         const stateParam = encodeURIComponent(JSON.stringify(stateData));
         router.push(`/payment?state=${stateParam}`);

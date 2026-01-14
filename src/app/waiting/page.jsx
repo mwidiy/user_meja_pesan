@@ -136,6 +136,18 @@ export default function TrackingPage() {
 
         socket.on('connect', () => {
             console.log('🔌 Connected to socket for updates');
+            // Join Store Room for optimized/secured updates
+            const storedTable = localStorage.getItem('customer_table');
+            if (storedTable) {
+                try {
+                    const parsed = JSON.parse(storedTable);
+                    const sid = parsed.location?.storeId;
+                    if (sid) {
+                        socket.emit('join_store', sid);
+                        console.log(`🔌 Joining Room: store_${sid}`);
+                    }
+                } catch (e) { }
+            }
         });
 
         // Listen for ANY order update

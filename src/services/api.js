@@ -9,11 +9,12 @@ export const getDynamicUrl = () => {
     return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 };
 
-export const getProducts = async () => {
+export const getProducts = async (storeId) => {
     const API_URL = getDynamicUrl(); // Calculate NOW
     try {
-        console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products`);
-        const res = await fetch(`${API_URL}/api/products`, { cache: 'no-store' });
+        const query = storeId ? `?storeId=${storeId}` : '';
+        console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products${query}`);
+        const res = await fetch(`${API_URL}/api/products${query}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to fetch products: ${res.statusText}`);
         }
@@ -24,10 +25,11 @@ export const getProducts = async () => {
     }
 };
 
-export const getCategories = async () => {
+export const getCategories = async (storeId) => {
     const API_URL = getDynamicUrl();
     try {
-        const res = await fetch(`${API_URL}/api/categories`, { cache: 'no-store' });
+        const query = storeId ? `?storeId=${storeId}` : '';
+        const res = await fetch(`${API_URL}/api/categories${query}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to fetch categories: ${res.statusText}`);
         }
@@ -38,10 +40,11 @@ export const getCategories = async () => {
     }
 };
 
-export const getBanners = async () => {
+export const getBanners = async (storeId) => {
     const API_URL = getDynamicUrl();
     try {
-        const res = await fetch(`${API_URL}/api/banners?status=active`, { cache: 'no-store' });
+        const query = storeId ? `&storeId=${storeId}` : '';
+        const res = await fetch(`${API_URL}/api/banners?status=active${query}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to fetch banners: ${res.statusText}`);
         }
@@ -67,10 +70,11 @@ export const getTableByQrCode = async (code) => {
     }
 };
 
-export const getStore = async () => {
+export const getStore = async (storeId) => {
     const API_URL = getDynamicUrl();
     try {
-        const res = await fetch(`${API_URL}/api/store`, { cache: 'no-store' });
+        const query = storeId ? `?storeId=${storeId}` : '';
+        const res = await fetch(`${API_URL}/api/store${query}`, { cache: 'no-store' });
         if (!res.ok) throw new Error(`Failed to fetch store: ${res.statusText}`);
         return await res.json();
     } catch (error) {
@@ -110,12 +114,13 @@ export const getImageUrl = (urlOrFilename) => {
 export const createOrder = async (orderData) => {
     const API_URL = getDynamicUrl();
     try {
+        console.log("🔍 [Debug] Creating Order Payload:", JSON.stringify(orderData, null, 2));
         const res = await fetch(`${API_URL}/api/orders`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(orderData),
+            body: JSON.stringify(orderData), // orderData should now contain storeId
         });
 
         if (!res.ok) {

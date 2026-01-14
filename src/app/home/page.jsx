@@ -33,9 +33,9 @@ export default function HomePixelPerfect() {
     const [customerTable, setCustomerTable] = useState(null);
 
     // --- FETCH FUNCTIONS (INDEPENDENT) ---
-    const fetchDataStore = async () => {
+    const fetchDataStore = async (sid) => {
         try {
-            const storeRes = await import('../../services/api').then(mod => mod.getStore());
+            const storeRes = await import('../../services/api').then(mod => mod.getStore(sid));
             if (storeRes && storeRes.success) {
                 setStore(storeRes.data);
             }
@@ -44,9 +44,9 @@ export default function HomePixelPerfect() {
         }
     };
 
-    const fetchDataProducts = async () => {
+    const fetchDataProducts = async (sid) => {
         try {
-            const prodsRes = await getProducts();
+            const prodsRes = await getProducts(sid);
             const productsData = prodsRes.data && Array.isArray(prodsRes.data)
                 ? prodsRes.data
                 : (Array.isArray(prodsRes) ? prodsRes : []);
@@ -56,9 +56,9 @@ export default function HomePixelPerfect() {
         }
     };
 
-    const fetchDataBanners = async () => {
+    const fetchDataBanners = async (sid) => {
         try {
-            const bannersRes = await getBanners();
+            const bannersRes = await getBanners(sid);
             const bannersData = bannersRes.data && Array.isArray(bannersRes.data)
                 ? bannersRes.data
                 : (Array.isArray(bannersRes) ? bannersRes : []);
@@ -68,9 +68,9 @@ export default function HomePixelPerfect() {
         }
     };
 
-    const fetchDataCategories = async () => {
+    const fetchDataCategories = async (sid) => {
         try {
-            const catsRes = await getCategories();
+            const catsRes = await getCategories(sid);
             const categoriesData = catsRes.data && Array.isArray(catsRes.data)
                 ? catsRes.data
                 : (Array.isArray(catsRes) ? catsRes : []);
@@ -85,11 +85,31 @@ export default function HomePixelPerfect() {
         const initData = async () => {
             setIsLoading(true);
             try {
+                // Get Store ID from LocalStorage (Customer Table)
+                let currentStoreId = null;
+                try {
+                    const stored = localStorage.getItem('customer_table');
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        // Access storeId from location relation: location.storeId
+                        // Or if direct relation exists. Assuming table -> location -> storeId
+                        if (parsed.location && parsed.location.storeId) {
+                            currentStoreId = parsed.location.storeId;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing customer table for ID", e);
+                }
+
+                if (!currentStoreId) {
+                    console.warn("⚠️ No Store ID found. PWA might show empty data.");
+                }
+
                 await Promise.all([
-                    fetchDataStore(), // Fetch Store
-                    fetchDataProducts(),
-                    fetchDataCategories(),
-                    fetchDataBanners()
+                    fetchDataStore(currentStoreId),
+                    fetchDataProducts(currentStoreId),
+                    fetchDataCategories(currentStoreId),
+                    fetchDataBanners(currentStoreId)
                 ]);
             } catch (err) {
                 console.error('Error loading initial data:', err);
