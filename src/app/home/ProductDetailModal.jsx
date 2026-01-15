@@ -30,7 +30,7 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
 
     if (showAR) {
         // Render ARViewer when showAR is true. Pass onClose to hide it.
-        return <ARViewer onClose={() => setShowAR(false)} modelSrc={product.arModel || '/assets/kompres.glb'} />;
+        return <ARViewer onClose={() => setShowAR(false)} modelSrc={product.arModel || '/assets/extra_chocolate_marshmallow_cupcake.glb'} />;
     }
 
     return (
@@ -127,7 +127,8 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
                                 </div>
 
                                 <div className="btn-group">
-                                    {product.ar && (
+                                    {/* AR Button Force Show for Testing */}
+                                    {true && (
                                         <button className="btn-main btn-outline" id="btnAR" onClick={() => setShowAR(true)}>
                                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
                                             Lihat di Meja Anda (AR)

@@ -3,7 +3,7 @@
 import Script from 'next/script';
 import { useRef } from 'react';
 
-export default function ARViewer({ onClose, modelSrc = '/assets/kompres.glb' }) {
+export default function ARViewer({ onClose, modelSrc = '/assets/extra_chocolate_marshmallow_cupcake.glb' }) {
     const modelViewerRef = useRef(null);
 
     const handleARClick = (e) => {
@@ -42,7 +42,7 @@ export default function ARViewer({ onClose, modelSrc = '/assets/kompres.glb' }) 
             <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
                 <model-viewer
                     ref={modelViewerRef}
-                    src={modelSrc || "/assets/kompres.glb"}
+                    src={modelSrc || "/assets/extra_chocolate_marshmallow_cupcake.glb"}
                     ios-src="" // Di iOS wajib isi file .usdz jika ingin AR native
                     ar
                     /* PENTING: scene-viewer ditaruh depan agar di Android dia memprioritaskan Native Google App (lebih stabil dibanding WebXR di PWA) */
