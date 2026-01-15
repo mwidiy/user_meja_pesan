@@ -1,10 +1,11 @@
 'use client';
 
 import Script from 'next/script';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 export default function ARViewer({ onClose, modelSrc = '/assets/extra_chocolate_marshmallow_cupcake.glb' }) {
     const modelViewerRef = useRef(null);
+    const [showUnsupportedModal, setShowUnsupportedModal] = useState(false);
 
     const handleARClick = (e) => {
         e.preventDefault();
@@ -12,9 +13,8 @@ export default function ARViewer({ onClose, modelSrc = '/assets/extra_chocolate_
             if (modelViewerRef.current.canActivateAR) {
                 modelViewerRef.current.activateAR();
             } else {
-                console.log("AR not supported or not ready");
-                // Fallback: try forcing it anyway, sometimes the property is laggy
-                modelViewerRef.current.activateAR();
+                // Show friendly alert instead of silent failure
+                setShowUnsupportedModal(true);
             }
         }
     };
@@ -137,6 +137,53 @@ export default function ARViewer({ onClose, modelSrc = '/assets/extra_chocolate_
                     </button>
                 </div>
             </div>
+
+            {/* MODAL UNSUPPORTED DEVICE */}
+            {showUnsupportedModal && (
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 10000,
+                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px',
+                    pointerEvents: 'auto'
+                }}>
+                    <div style={{
+                        backgroundColor: 'white',
+                        borderRadius: '20px',
+                        padding: '24px',
+                        maxWidth: '320px',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+                    }}>
+                        <div style={{ fontSize: '40px', marginBottom: '16px' }}>📱❌</div>
+                        <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
+                            Perangkat Tidak Mendukung
+                        </h3>
+                        <p style={{ fontSize: '14px', color: '#6B7280', lineHeight: '1.5', marginBottom: '24px' }}>
+                            Maaf, HP Anda belum dilengkapi sensor ARCore dari Google. Tapi Anda tetap bisa melihat model 3D-nya secara interaktif di layar ini!
+                        </p>
+                        <button
+                            onClick={() => setShowUnsupportedModal(false)}
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                borderRadius: '12px',
+                                backgroundColor: '#1E3A5F',
+                                color: 'white',
+                                fontWeight: '600',
+                                border: 'none',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Oke, Mengerti
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
