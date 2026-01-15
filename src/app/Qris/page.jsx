@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import QRCode from 'react-qr-code'; // IMPORTED
 import { getDynamicUrl } from '../../services/api';
 
 export default function QrisPage() {
@@ -12,28 +13,23 @@ export default function QrisPage() {
 
     const [orderId, setOrderId] = useState(null);
     const [isPaid, setIsPaid] = useState(false);
+    const [qrValue, setQrValue] = useState('');
+    const [loadingQr, setLoadingQr] = useState(false);
 
+    // 1. Parse URL Params FIRST
     useEffect(() => {
-        // Fetch Store QRIS
-        import('../../services/api').then(mod => {
-            mod.getStore().then(res => {
-                if (res && res.success && res.data && res.data.qrisImage) {
-                    setQrisUrl(mod.getImageUrl(res.data.qrisImage));
-                }
-            });
-        });
-
-        // Read props from URL
         try {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
-            const idParam = params.get('orderId'); // Read orderId from URL
+            const idParam = params.get('orderId');
+            const storeIdParam = params.get('storeId'); // Capture storeId if needed
 
             if (idParam) setOrderId(idParam);
 
             if (raw) {
                 const parsed = JSON.parse(decodeURIComponent(raw));
                 setOrderState(parsed);
+                // Priority: Amount from URL state -> Default
                 if (parsed.subtotal) setAmount(parsed.subtotal);
             }
         } catch (e) { }
@@ -42,7 +38,41 @@ export default function QrisPage() {
             setRemaining((prev) => (prev > 0 ? prev - 1 : 0));
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, []); // Run ONCE on mount
+
+    // 2. Fetch Payment QR after Amount & ID are ready
+    useEffect(() => {
+        if (!orderId || !amount) return;
+        if (loadingQr || qrValue) return;
+
+        const initPayment = async () => {
+            setLoadingQr(true);
+            try {
+                const API_URL = getDynamicUrl();
+                const res = await fetch(`${API_URL}/api/payment/create-transaction`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId: orderId,
+                        amount: amount,
+                        paymentMethod: 'QR',
+                        origin: window.location.origin // Kirim URL saat ini (misal: https://blablabla.loca.lt)
+                    })
+                });
+                const json = await res.json();
+                if (json.success && json.data) {
+                    setQrValue(json.data.qrString || json.data.paymentUrl);
+                }
+            } catch (e) {
+                console.error("Payment Network Error", e);
+            } finally {
+                setLoadingQr(false);
+            }
+        };
+
+        // Small delay to ensure state stability? No, useEffect dep handling is enough.
+        initPayment();
+    }, [orderId, amount]);
 
     // POLLING CHECK STATUS
     useEffect(() => {
@@ -440,12 +470,18 @@ export default function QrisPage() {
                             <div className="qr-wrapper">
                                 <div className="qr-card">
                                     <div className="qr-inner">
-                                        <img src={qrisUrl || "/assets/QR_Code.svg"} alt="QRIS"
-                                            onError={(e) => {
-                                                e.target.onerror = null;
-                                                e.target.src = '/assets/QR_Code.svg';
-                                            }}
-                                        />
+                                        {loadingQr ? (
+                                            <div style={{ color: '#888' }}>Memuat QR...</div>
+                                        ) : qrValue ? (
+                                            <QRCode
+                                                value={qrValue}
+                                                size={180}
+                                                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                                                viewBox={`0 0 256 256`}
+                                            />
+                                        ) : (
+                                            <img src="/assets/QR_Code.svg" alt="QRIS Fallback" />
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -473,6 +509,50 @@ export default function QrisPage() {
                                 <img src="/assets/Refresh_1.svg" alt="Refresh" />
                             </span>
                             <span className="refresh-text">Refresh QR Code</span>
+                        </div>
+
+                        <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                            <button
+                                onClick={async () => {
+                                    if (!orderId) return alert("Order ID belum ada");
+                                    try {
+                                        const API_URL = getDynamicUrl();
+                                        const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ paymentStatus: 'Paid' })
+                                        });
+
+                                        if (!res.ok) {
+                                            const errText = await res.text();
+                                            throw new Error(errText || res.statusText);
+                                        }
+
+                                        // Update state manually so UI reacts immediately
+                                        setIsPaid(true);
+
+                                        // Manual Redirect Logic
+                                        const finalState = {
+                                            ...orderState,
+                                            status: 'paid',
+                                            id: orderId
+                                        };
+                                        const stateParam = encodeURIComponent(JSON.stringify(finalState));
+                                        alert("Berhasil! Mengalihkan ke halaman Order...");
+                                        router.push(`/order?state=${stateParam}`);
+
+                                    } catch (e) {
+                                        console.error(e);
+                                        alert("Gagal simulasi. Cek console.");
+                                    }
+                                }}
+                                style={{
+                                    background: '#FACC15', color: '#000', border: 'none',
+                                    padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold'
+                                }}
+                            >
+                                🔨 Simulasi Bayar (DEV) - Instant
+                            </button>
                         </div>
 
                         <button className="next-flow-btn" onClick={handleNext}>
