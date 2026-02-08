@@ -4,7 +4,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ARViewer from './ARViewer'; // Import the ARViewer component
-import { getImageUrl } from '../../services/api';
+import { getImageUrl, getArModelUrl } from '../../services/api';
+import ArIconRGB from './ArIconRGB';
 
 const formatRupiah = (num) => 'Rp ' + num.toLocaleString('id-ID');
 
@@ -30,7 +31,8 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
 
     if (showAR) {
         // Render ARViewer when showAR is true. Pass onClose to hide it.
-        return <ARViewer onClose={() => setShowAR(false)} modelSrc={product.arModel || '/assets/extra_chocolate_marshmallow_cupcake.glb'} />;
+        const modelUrl = getArModelUrl(product.ar3dModel);
+        return <ARViewer onClose={() => setShowAR(false)} modelSrc={modelUrl || '/assets/extra_chocolate_marshmallow_cupcake.glb'} />;
     }
 
     return (
@@ -63,6 +65,12 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
                 .btn-main { width:100%; padding:14px; border-radius:12px; font-weight:600; font-size:1rem; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; }
                 .btn-primary { background:#FACC15; color:#111827; }
                 .btn-outline { background:transparent; border:1px solid #111827; color:#111827; }
+
+                @keyframes rgbShimmer {
+                    0% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                    100% { background-position: 0% 50%; }
+                }
             `}</style>
 
             {/* container mimicking #detailView */}
@@ -83,8 +91,13 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
                         </div>
 
                         <div className="detail-image-container">
-                            {product.ar && (
-                                <img src="/assets/Ar_Icon.png" alt="AR" className="ar-watermark" />
+                            {product.isArActive && (
+                                <div className="ar-watermark" style={{
+                                    width: '64px', height: '28px', // Adjust size for detail view
+                                    top: '18px', left: '18px', position: 'absolute', zIndex: 2
+                                }}>
+                                    <ArIconRGB />
+                                </div>
                             )}
                             <img
                                 className="product-img"
@@ -128,7 +141,7 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
 
                                 <div className="btn-group">
                                     {/* AR Button Force Show for Testing */}
-                                    {true && (
+                                    {product.isArActive && (
                                         <button className="btn-main btn-outline" id="btnAR" onClick={() => setShowAR(true)}>
                                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
                                             Lihat di Meja Anda (AR)

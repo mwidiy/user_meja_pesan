@@ -103,10 +103,10 @@ export default function WelcomePage() {
                 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; -webkit-tap-highlight-color: transparent; }
                 :root { --accent: #fdd85d; --text-dark: #1a2b48; }
                 html, body { height: 100%; }
-                body { background-color: #ffffff; color: var(--text-dark); height: 100vh; width: 100%; display: flex; justify-content: center; overflow: hidden; }
+                body { background-color: #ffffff; color: var(--text-dark); height: 100dvh; width: 100%; display: flex; justify-content: center; overflow: hidden; }
 
                 /* --- CONTAINER --- */
-                .app-container { width: 100%; max-width: 480px; height: 100%; position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: 40px 30px; background: #fff; }
+                .app-container { width: 100%; max-width: 480px; height: 100%; position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: 40px 30px 60px 30px; background: #fff; }
 
                 /* --- DECORATIONS --- */
                 .decoration-p-img { position: absolute; top: -50px; left: 20px; width: 300px; height: auto; z-index: 0; pointer-events: none; }
@@ -133,7 +133,7 @@ export default function WelcomePage() {
                 .btn-primary:active { transform: scale(0.98); box-shadow: 0 5px 10px rgba(253, 216, 93, 0.2); }
 
                 @media (max-width: 420px) {
-                    .app-container { padding: 28px 18px; }
+                    .app-container { padding: 28px 18px 60px 18px; }
                     .decoration-p-img { width: 220px; left: 10px; top: -40px; }
                 }
             `}</style>

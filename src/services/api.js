@@ -12,7 +12,7 @@ export const getDynamicUrl = () => {
 export const getProducts = async (storeId) => {
     const API_URL = getDynamicUrl(); // Calculate NOW
     try {
-        const query = storeId ? `?storeId=${storeId}` : '';
+        const query = storeId ? `?storeId=${storeId}&t=${Date.now()}` : `?t=${Date.now()}`;
         console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products${query}`);
         const res = await fetch(`${API_URL}/api/products${query}`, { cache: 'no-store' });
         if (!res.ok) {
@@ -109,6 +109,34 @@ export const getImageUrl = (urlOrFilename) => {
 
     // Jika hanya nama file, asumsikan ada di folder uploads backend
     return `${API_URL}/uploads/${urlOrFilename}`;
+};
+
+export const getArModelUrl = (urlOrFilename) => {
+    const API_URL = getDynamicUrl();
+    if (!urlOrFilename) return null;
+
+    // Jika URL lengkap (ada http/https)
+    if (urlOrFilename.startsWith('http')) {
+        try {
+            const apiUrlObj = new URL(API_URL);
+            const modelUrlObj = new URL(urlOrFilename);
+
+            // Force replace localhost OR any old IP/hostname with the current API_URL hostname
+            if (modelUrlObj.hostname !== apiUrlObj.hostname || modelUrlObj.port !== apiUrlObj.port) {
+                modelUrlObj.protocol = apiUrlObj.protocol;
+                modelUrlObj.hostname = apiUrlObj.hostname;
+                modelUrlObj.port = apiUrlObj.port;
+                return modelUrlObj.toString();
+            }
+            return urlOrFilename;
+        } catch (e) {
+            return urlOrFilename;
+        }
+    }
+
+    // Jika hanya nama file, asumsikan ada di folder ar-assets backend
+    // Note: Backend serve this at /ar-assets/filename.glb
+    return `${API_URL}/ar-assets/${urlOrFilename}`;
 };
 
 export const createOrder = async (orderData) => {

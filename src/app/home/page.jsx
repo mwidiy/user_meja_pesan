@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { io } from 'socket.io-client';
+
 import { getProducts, getCategories, getBanners, getImageUrl, getDynamicUrl } from '../../services/api';
 import ProductDetailModal from './ProductDetailModal';
+import ArIconRGB from './ArIconRGB';
 
 const formatRupiah = (price) => {
     return new Intl.NumberFormat('id-ID', {
@@ -31,6 +33,40 @@ export default function HomePixelPerfect() {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
     const [customerTable, setCustomerTable] = useState(null);
+    const [isSearchMode, setIsSearchMode] = useState(false);
+
+    // --- HARDWARE BACK BUTTON & SEARCH LOGIC ---
+    useEffect(() => {
+        const handlePopState = () => {
+            // Jika user menekan tombol back HP saat mode search, matikan mode search
+            if (isSearchMode) {
+                setIsSearchMode(false);
+                setSearchQuery('');
+                setActiveFilter('all');
+                // Force blur agar input tidak "stuck" di state focus
+                if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                }
+            }
+        };
+
+        // Tambahkan listener
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [isSearchMode]);
+
+    const handleSearchFocus = () => {
+        if (!isSearchMode) {
+            setIsSearchMode(true);
+            // Push state history agar tombol back HP berfungsi untuk menutup search
+            window.history.pushState({ search: true }, '', window.location.href);
+        }
+    };
+
+    const handleSearchCancel = () => {
+        // Trigger back browser (akan ditangkap oleh popstate listener)
+        window.history.back();
+    };
 
     // --- FETCH FUNCTIONS (INDEPENDENT) ---
     const fetchDataStore = async (sid) => {
@@ -44,27 +80,85 @@ export default function HomePixelPerfect() {
         }
     };
 
-    const fetchDataProducts = async (sid) => {
+    const fetchDataProducts = async (sid, isSilent = false) => {
         try {
-            const prodsRes = await getProducts(sid);
+            // Fallback to localStorage if sid is missing (common in socket events)
+            let storeIdToUse = sid;
+            if (!storeIdToUse) {
+                try {
+                    const stored = localStorage.getItem('customer_table');
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        if (parsed.location && parsed.location.storeId) {
+                            storeIdToUse = parsed.location.storeId;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing customer table for ID in fallback", e);
+                }
+            }
+
+            if (!storeIdToUse) {
+                console.warn("⚠️ fetchDataProducts: No Store ID found.");
+                return;
+            }
+
+            // Only show loader if NOT silent (initial load)
+            if (!isSilent && products.length === 0) setIsLoading(true);
+
+            const prodsRes = await getProducts(storeIdToUse);
             const productsData = prodsRes.data && Array.isArray(prodsRes.data)
                 ? prodsRes.data
                 : (Array.isArray(prodsRes) ? prodsRes : []);
             setProducts(productsData);
         } catch (error) {
             console.error('Error fetching products:', error);
+        } finally {
+            if (!isSilent) setIsLoading(false);
         }
     };
 
     const fetchDataBanners = async (sid) => {
+        const staticArBanner = {
+            id: 'static-ar',
+            title: 'Nikmati Melihat Menu Langsung Di Meja',
+            subtitle: 'Dengan Fitur AR',
+            highlightText: '',
+            image: '/assets/Ar.png',
+            isStatic: true
+        };
+
         try {
-            const bannersRes = await getBanners(sid);
+            // Fallback to localStorage if sid is missing
+            let storeIdToUse = sid;
+            if (!storeIdToUse) {
+                try {
+                    const stored = localStorage.getItem('customer_table');
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        if (parsed.location && parsed.location.storeId) {
+                            storeIdToUse = parsed.location.storeId;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing customer table for ID in banner fallback", e);
+                }
+            }
+
+            if (!storeIdToUse) {
+                console.warn("⚠️ fetchDataBanners: No Store ID found.");
+                setBanners([staticArBanner]);
+                return;
+            }
+
+            const bannersRes = await getBanners(storeIdToUse);
             const bannersData = bannersRes.data && Array.isArray(bannersRes.data)
                 ? bannersRes.data
                 : (Array.isArray(bannersRes) ? bannersRes : []);
-            setBanners(bannersData);
+            setBanners([...bannersData, staticArBanner]);
         } catch (error) {
             console.error('Error fetching banners:', error);
+            setBanners([staticArBanner]);
         }
     };
 
@@ -121,9 +215,29 @@ export default function HomePixelPerfect() {
         initData();
     }, []);
 
-    // --- SOCKET.IO LISTENER ---
+    // --- SYNC SELECTED PRODUCT (REALTIME) ---
     useEffect(() => {
-        // Inisialisasi koneksi Socket.io
+        if (selectedProduct) {
+            // Check if product still exists in the latest products list
+            const updated = products.find(p => p.id === selectedProduct.id);
+            if (updated) {
+                // Keep the client-side 'selectedQty' but update data from server
+                setSelectedProduct(prev => ({
+                    ...updated,
+                    selectedQty: prev.selectedQty
+                }));
+            } else {
+                // If product is not found (deleted/inactive), close modal
+                // Note: This also handles the case where products becomes empty []
+                setSelectedProduct(null);
+            }
+        }
+    }, [products]);
+
+    // --- SOCKET.IO LISTENER ---
+    const updateTimeoutRef = useRef(null);
+
+    useEffect(() => {
         // Initialize Socket.io with Dynamic URL
         const socketUrl = getDynamicUrl();
         console.log("🔌 Socket connecting to:", socketUrl);
@@ -133,21 +247,28 @@ export default function HomePixelPerfect() {
             reconnection: true,
         });
 
+        const handleUpdate = (type) => {
+            if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+
+            updateTimeoutRef.current = setTimeout(() => {
+                console.log(`🔄 Socket event: ${type} received. Debounced Refetching...`);
+                // Fetch both to ensure consistency, efficient enough for small data
+                // Pass true for isSilent to avoid full page loading spinner
+                fetchDataProducts(null, true);
+                fetchDataBanners();
+            }, 1500); // 1.5s debounce to prevent crash loops
+        };
+
         // Event Listener: Products Updated
-        socket.on('products_updated', () => {
-            console.log('Socket event: products_updated received. Refetching...');
-            fetchDataProducts(); // Silent update (tanpa loading spinner)
-        });
+        socket.on('products_updated', () => handleUpdate('products_updated'));
 
         // Event Listener: Banners Updated
-        socket.on('banners_updated', () => {
-            console.log('Socket event: banners_updated received. Refetching...');
-            fetchDataBanners(); // Silent update
-        });
+        socket.on('banners_updated', () => handleUpdate('banners_updated'));
 
         // Cleanup saat unmount
         return () => {
             socket.disconnect();
+            if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
         };
     }, []);
 
@@ -463,12 +584,17 @@ export default function HomePixelPerfect() {
             display: flex; align-items: center; justify-content: center;
             transition: all 0.2s;
         }
+        @keyframes rgbShimmer {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
       `}</style>
 
             <div className="app-wrapper">
 
                 {/* HEADER */}
-                <header className="header">
+                <header className={`header transition-all duration-300 ease-in-out ${isSearchMode ? 'hidden' : 'flex'}`}>
                     <div className="flex items-center gap-[8px]">
                         <div className="h-[38px] max-w-[140px] flex items-center">
                             <img
@@ -494,101 +620,126 @@ export default function HomePixelPerfect() {
 
                 <div className="flex-1">
 
-                    {/* HERO */}
-                    <section className="hero">
-                        <h1 className="text-[1.9rem] font-extrabold text-[#111827] mb-[18px]">
+                    {/* HERO & SEARCH BAR */}
+                    <section className={`transition-all duration-300 ${isSearchMode ? 'sticky top-0 z-[100] bg-white p-[10px] shadow-sm pb-[14px]' : 'hero'}`}>
+                        <h1
+                            className={`text-[1.9rem] font-extrabold text-[#111827] mb-[18px] transition-all duration-300 origin-left 
+                            ${isSearchMode ? 'hidden' : 'block'}`}
+                        >
                             Selamat Datang!
                         </h1>
-                        <div className="search-box">
-                            <svg className="w-[20px] h-[20px]" fill="none" stroke="#9CA3AF" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <div className={`transition-all duration-300 flex items-center ${isSearchMode ? 'gap-[10px] bg-[#F3F4F6] rounded-[10px] px-[10px] py-[8px]' : 'search-box'}`}>
+
+                            {/* Icon: Magnifying Glass (Normal) or Back Arrow (Search Mode) */}
+                            {isSearchMode ? (
+                                <button onClick={handleSearchCancel} className="bg-transparent border-none p-0 cursor-pointer flex items-center justify-center">
+                                    <svg className="w-[24px] h-[24px] text-[#111827]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                </button>
+                            ) : (
+                                <svg className="w-[20px] h-[20px] text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            )}
+
                             <input
                                 type="text"
-                                placeholder="Mau pesan apa hari ini?"
-                                className="bg-transparent border-none w-full outline-none text-[0.95rem] text-[#111827]"
+                                placeholder={isSearchMode ? "Cari menu favoritmu..." : "Mau pesan apa hari ini?"}
+                                className={`bg-transparent border-none w-full outline-none text-[#111827] ${isSearchMode ? 'text-[1rem]' : 'text-[0.95rem]'}`}
                                 value={searchQuery}
+                                onFocus={handleSearchFocus}
+                                onClick={handleSearchFocus} // Backup trigger jika onFocus tidak fire
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                autoFocus={isSearchMode}
                             />
                         </div>
                     </section>
 
                     {/* BANNER */}
-                    <section className="mt-[20px] relative">
-                        <div className="banner-track no-scrollbar" ref={bannerRef}>
-                            {banners.length > 0 ? (
-                                banners.map((banner) => (
-                                    <div className="banner-card" key={banner.id}>
-                                        <img
-                                            src={getImageUrl(banner.image)}
-                                            className="w-[90px] h-[90px] rounded-[18px] object-cover bg-gray-600 flex-shrink-0"
-                                            alt={banner.title}
-                                            onError={(e) => e.target.style.display = 'none'} // Safety jika gambar error
-                                        />
+                    <div className={`${isSearchMode ? 'hidden' : 'block transition-all duration-300 ease-in-out opacity-100 h-auto mt-[20px]'}`}>
+                        <section className="relative">
+                            <div className="banner-track no-scrollbar" ref={bannerRef}>
+                                {banners.length > 0 ? (
+                                    banners.map((banner) => (
+                                        <div
+                                            className="banner-card"
+                                            key={banner.id}
+                                            style={banner.isStatic ? { background: 'linear-gradient(45deg, #2C3E50, #34495E)' } : {}}
+                                        >
+                                            <img
+                                                src={banner.isStatic ? banner.image : getImageUrl(banner.image)}
+                                                className={`w-[90px] h-[90px] rounded-[18px] flex-shrink-0 ${banner.isStatic ? 'object-contain p-[5px] bg-white/10' : 'object-cover bg-gray-600'}`}
+                                                alt={banner.title}
+                                                onError={(e) => e.target.style.display = 'none'} // Safety jika gambar error
+                                            />
+                                            <div className="flex flex-col justify-center gap-0">
+                                                <h3 className="text-[1rem] font-bold text-white leading-[1.15] mb-[-2px]">
+                                                    {banner.title}
+                                                </h3>
+                                                <p className="text-[0.75rem] text-white/70 leading-[0.9] mb-[1px]">
+                                                    {banner.subtitle || ""}
+                                                </p>
+                                                <p className="text-[0.85rem] font-bold text-[#FDD85D] leading-[0.9] mt-0">
+                                                    {banner.highlightText}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    // Fallback jika banner kosong (opsional, bisa spinner atau statis)
+                                    <div className="banner-card">
+                                        <div className="w-[90px] h-[90px] rounded-[18px] bg-gray-600 flex-shrink-0 animate-pulse"></div>
                                         <div>
-                                            <h3 className="text-[1.05rem] font-bold leading-[1.35] mb-[4px]">
-                                                {banner.subtitle || "Promo"} <br />
-                                                {banner.title}
-                                            </h3>
-                                            <p className="text-[0.9rem] opacity-95">
-                                                {banner.highlightText}
-                                            </p>
+                                            <div className="h-4 w-32 bg-gray-500 rounded mb-2 animate-pulse"></div>
+                                            <div className="h-3 w-20 bg-gray-500 rounded animate-pulse"></div>
                                         </div>
                                     </div>
-                                ))
-                            ) : (
-                                // Fallback jika banner kosong (opsional, bisa spinner atau statis)
-                                <div className="banner-card">
-                                    <div className="w-[90px] h-[90px] rounded-[18px] bg-gray-600 flex-shrink-0 animate-pulse"></div>
-                                    <div>
-                                        <div className="h-4 w-32 bg-gray-500 rounded mb-2 animate-pulse"></div>
-                                        <div className="h-3 w-20 bg-gray-500 rounded animate-pulse"></div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        {/* Dots Indicator */}
-                        <div className="flex justify-center gap-[6px] mt-[8px]">
-                            {/* Hanya render dots jika ada banners */}
-                            {banners.length > 0 && banners.map((_, idx) => (
-                                <div key={idx}
-                                    className={`h-[6px] rounded-full transition-all duration-300 ${activeBannerIndex === idx ? 'w-[18px] bg-[#1F2937]' : 'w-[6px] bg-[#D1D5DB]'}`}
-                                ></div>
-                            ))}
-                        </div>
-                    </section>
+                                )}
+                            </div>
+                            {/* Dots Indicator */}
+                            <div className="flex justify-center gap-[6px] mt-[8px]">
+                                {/* Hanya render dots jika ada banners */}
+                                {banners.length > 0 && banners.map((_, idx) => (
+                                    <div key={idx}
+                                        className={`h-[6px] rounded-full transition-all duration-300 ${activeBannerIndex === idx ? 'w-[18px] bg-[#1F2937]' : 'w-[6px] bg-[#D1D5DB]'}`}
+                                    ></div>
+                                ))}
+                            </div>
+                        </section>
+                    </div>
 
                     {/* CATEGORIES */}
-                    <nav className="flex gap-[10px] overflow-x-auto px-[22px] pt-[22px] pb-[18px] no-scrollbar">
-                        {/* Tombol Terlaris / Semua */}
-                        <button
-                            onClick={() => setActiveFilter('all')}
-                            className={`
-                                  border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
-                                  ${activeFilter === 'all' ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
-                              `}
-                        >
-                            {activeFilter === 'all' && (
-                                <svg className="w-[18px] h-[18px]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd"></path></svg>
-                            )}
-                            Semua
-                        </button>
+                    <div className={`${isSearchMode ? 'hidden' : 'block transition-all duration-300 ease-in-out opacity-100 h-auto'}`}>
+                        <nav className="flex gap-[10px] overflow-x-auto px-[22px] pt-[22px] pb-[18px] no-scrollbar">
+                            {/* Tombol Terlaris / Semua */}
+                            <button
+                                onClick={() => setActiveFilter('all')}
+                                className={`
+                                      border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
+                                      ${activeFilter === 'all' ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
+                                  `}
+                            >
+                                {activeFilter === 'all' && (
+                                    <svg className="w-[18px] h-[18px]" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd"></path></svg>
+                                )}
+                                Semua
+                            </button>
 
-                        {/* Kategori Dinamis dari API */}
-                        {Array.isArray(categories) && categories.map((cat) => {
-                            const isActive = activeFilter === cat.id;
-                            return (
-                                <button
-                                    key={cat.id}
-                                    onClick={() => setActiveFilter(cat.id)}
-                                    className={`
-                                        border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
-                                        ${isActive ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
-                                    `}
-                                >
-                                    {cat.name}
-                                </button>
-                            );
-                        })}
-                    </nav>
+                            {/* Kategori Dinamis dari API */}
+                            {Array.isArray(categories) && categories.map((cat) => {
+                                const isActive = activeFilter === cat.id;
+                                return (
+                                    <button
+                                        key={cat.id}
+                                        onClick={() => setActiveFilter(cat.id)}
+                                        className={`
+                                            border-none px-[20px] py-[9px] rounded-full text-[0.92rem] font-semibold whitespace-nowrap cursor-pointer flex items-center gap-[8px] transition-all
+                                            ${isActive ? 'bg-[#FACC15] text-[#111827] shadow-[0_10px_20px_rgba(250,204,21,0.5)]' : 'bg-white text-[#6B7280] shadow-[0_8px_18px_rgba(15,23,42,0.03)]'}
+                                        `}
+                                    >
+                                        {cat.name}
+                                    </button>
+                                );
+                            })}
+                        </nav>
+                    </div>
 
                     {/* MENU GRID */}
                     <main className="menu-grid">
@@ -613,9 +764,9 @@ export default function HomePixelPerfect() {
                                 >
                                     {/* Image */}
                                     <div className="relative w-full aspect-[4/3.3] rounded-[18px] overflow-hidden mb-[10px] bg-[#E5E7EB]">
-                                        {item.ar && (
-                                            <div className="absolute top-[10px] left-[10px] bg-transparent z-10">
-                                                <img src="/assets/Ar_Icon.png" className="w-[40px] h-[18px] object-contain block" />
+                                        {item.isArActive && (
+                                            <div className="absolute top-[10px] left-[10px] z-10 w-[40px] h-[18px]">
+                                                <ArIconRGB />
                                             </div>
                                         )}
                                         <img
