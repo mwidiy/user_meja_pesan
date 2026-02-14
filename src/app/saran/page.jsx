@@ -1,12 +1,59 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import emailjs from '@emailjs/browser';
 
 export default function FeedbackPage() {
     const router = useRouter();
+    const fileInputRef = useRef(null);
     const [selectedCategory, setSelectedCategory] = useState('bug'); // Default active 'Laporan Bug'
     const [feedbackText, setFeedbackText] = useState('');
+    const [attachment, setAttachment] = useState(null);
+    const [notification, setNotification] = useState(null);
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Reset notification
+        setNotification(null);
+
+        // 1. Validate File Size (Max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            setNotification({
+                type: 'error',
+                message: 'Ukuran file terlalu besar (Maksimal 5MB)'
+            });
+            // Clear input
+            e.target.value = '';
+            return;
+        }
+
+        // 2. Validate File Type (PNG, JPG, JPEG)
+        const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+        if (!validTypes.includes(file.type)) {
+            setNotification({
+                type: 'error',
+                message: 'Hanya format PNG, JPG, dan JPEG yang diperbolehkan'
+            });
+            // Clear input
+            e.target.value = '';
+            return;
+        }
+
+        // Valid File
+        setAttachment(file);
+        setNotification({
+            type: 'success',
+            message: 'Screenshot berhasil dilampirkan!'
+        });
+
+        // Auto-hide success notif
+        setTimeout(() => setNotification(null), 3000);
+    };
+
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const categories = [
         { id: 'feature', label: '💡 Saran Fitur' },
@@ -14,6 +61,104 @@ export default function FeedbackPage() {
         { id: 'design', label: '🎨 Desain/Tampilan' },
         { id: 'other', label: '❓ Lainnya' },
     ];
+
+    const sendFeedback = async () => {
+        if (!feedbackText.trim()) {
+            setNotification({ type: 'error', message: 'Mohon isi masukan Anda terlebih dahulu.' });
+            return;
+        }
+
+        setIsSubmitting(true);
+        setNotification(null);
+
+        try {
+
+
+            // Get category label for the email header
+            const categoryLabel = categories.find(c => c.id === selectedCategory)?.label || 'SARAN';
+            // Format: "SARAN" (uppercase, removed emoji for cleaner email subject/header if needed, but sticking to user request)
+            // User requested: "SARAN" then content. Let's map ids to upper case keywords.
+            const prefixMap = {
+                'feature': 'SARAN',
+                'bug': 'LAPORAN BUG',
+                'design': 'DESAIN',
+                'other': 'LAINNYA'
+            };
+            const prefix = prefixMap[selectedCategory] || 'SARAN';
+
+            let imageUrl = '';
+
+            // 1. Upload to Cloudinary if attachment exists
+            if (attachment) {
+                try {
+                    const formData = new FormData();
+                    formData.append('file', attachment);
+                    formData.append('upload_preset', 'MEJA PESAN'); // Preset name
+                    // Cloud name: 'ddvkjluu2' (Corrected per user)
+                    const cloudName = 'ddvkjluu2';
+
+                    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`Upload Gambar Gagal: ${errorData.error?.message || response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    imageUrl = data.secure_url;
+
+                } catch (uploadError) {
+                    console.error('Cloudinary Upload Error:', uploadError);
+                    setNotification({ type: 'error', message: 'Gagal mengupload gambar. Coba lagi atau kirim tanpa gambar.' });
+                    setIsSubmitting(false);
+                    return; // Stop execution if upload fails
+                }
+            }
+
+            // 2. Prepare Message Content
+            const userName = localStorage.getItem('customerName') || 'Tanpa Nama';
+
+            let messageContent = `Nama: ${userName}\n`;
+            messageContent += `Jenis: ${prefix}\n\n`;
+            messageContent += `Pesan:\n${feedbackText}`;
+
+            if (imageUrl) {
+                messageContent += `\n\nUrl Gambar:\n${imageUrl}`;
+            }
+
+            const templateParams = {
+                message: messageContent,
+                to_name: "Developer",
+                from_name: userName, // Use actual name here too
+                reply_to: "no-reply@widi.com"
+            };
+
+            // 3. Send Email
+            await emailjs.send(
+                'service_txuj6if',
+                'template_m3lrqep',
+                templateParams,
+                'PiIvxAESwFwzEJ9zu'
+            );
+
+            setNotification({ type: 'success', message: 'Saran telah dikirimkan ke developer' });
+            setFeedbackText('');
+            setAttachment(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+
+        } catch (error) {
+            console.error('EmailJS Error:', error);
+
+            setNotification({ type: 'error', message: 'Gagal mengirim saran. Silakan coba lagi.' });
+        } finally {
+            setIsSubmitting(false);
+            // Hide notification after 3s
+            setTimeout(() => setNotification(null), 3000);
+        }
+    };
 
     return (
         <div className="page-wrapper">
@@ -35,6 +180,7 @@ export default function FeedbackPage() {
                 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
             `}</style>
 
+            {/* ... styles ... */}
             <style jsx>{`
                 .page-wrapper {
                     display: flex;
@@ -285,15 +431,56 @@ export default function FeedbackPage() {
                     </div>
                 </div>
 
+                {/* NOTIFICATION TOAST */}
+                {notification && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        style={{
+                            position: 'fixed',
+                            top: '80px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: notification.type === 'error' ? '#FEF2F2' : '#F0FDF4',
+                            border: `1px solid ${notification.type === 'error' ? '#FECACA' : '#BBF7D0'}`,
+                            color: notification.type === 'error' ? '#991B1B' : '#166534',
+                            padding: '12px 20px',
+                            borderRadius: '12px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            zIndex: 100,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            width: '90%',
+                            maxWidth: '400px',
+                            fontSize: '14px',
+                            fontWeight: '500'
+                        }}
+                    >
+                        <span>{notification.type === 'error' ? '⚠️' : '✅'}</span>
+                        {notification.message}
+                    </motion.div>
+                )}
+
                 {/* ATTACHMENT */}
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept=".png, .jpg, .jpeg"
+                    style={{ display: 'none' }}
+                />
+
                 <motion.div
                     className="attachment-card"
                     whileTap={{ scale: 0.98 }}
+                    onClick={() => fileInputRef.current?.click()}
                     style={{
                         height: '64px',
-                        backgroundColor: 'white',
+                        backgroundColor: attachment ? '#F0FDF4' : 'white',
                         borderRadius: '9999px',
-                        border: '1px solid #E5E7EB',
+                        border: attachment ? '1px solid #BBF7D0' : '1px solid #E5E7EB',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -302,10 +489,34 @@ export default function FeedbackPage() {
                         cursor: 'pointer'
                     }}
                 >
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1F2937" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={attachment ? "#166534" : "#1F2937"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        {attachment ? (
+                            <path d="M20 6L9 17l-5-5" />
+                        ) : (
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                        )}
                     </svg>
-                    <span className="attachment-text">Lampirkan Screenshot (Opsional)</span>
+                    <span className="attachment-text" style={{ color: attachment ? '#166534' : '#1F2937' }}>
+                        {attachment ? attachment.name : 'Lampirkan Screenshot (Opsional)'}
+                    </span>
+                    {attachment && (
+                        <div
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setAttachment(null);
+                                // Reset input value to allow selecting same file again
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                            }}
+                            style={{
+                                marginLeft: 'auto',
+                                marginRight: '16px',
+                                padding: '4px',
+                                color: '#991B1B'
+                            }}
+                        >
+                            ✕
+                        </div>
+                    )}
                 </motion.div>
             </div>
 
@@ -314,6 +525,8 @@ export default function FeedbackPage() {
                 <motion.button
                     className="submit-btn"
                     whileTap={{ scale: 0.98 }}
+                    onClick={sendFeedback}
+                    disabled={isSubmitting}
                     style={{
                         width: '100%',
                         height: '64px', /* Taller to match attachment button */
@@ -321,16 +534,16 @@ export default function FeedbackPage() {
                         fontWeight: '700',
                         borderRadius: '9999px',
                         border: 'none',
-                        backgroundColor: '#FDE047',
-                        color: '#1F2937',
+                        backgroundColor: isSubmitting ? '#E5E7EB' : '#FDE047',
+                        color: isSubmitting ? '#9CA3AF' : '#1F2937',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        cursor: 'pointer',
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
                         boxShadow: '0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -1px rgba(0, 0, 0, 0.06)'
                     }}
                 >
-                    Kirim Masukan
+                    {isSubmitting ? 'Mengirim...' : 'Kirim Masukan'}
                 </motion.button>
             </div>
 
