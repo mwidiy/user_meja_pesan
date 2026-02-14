@@ -23,6 +23,7 @@ export default function TrackingPage() {
     const [refundStatus, setRefundStatus] = useState(null);
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
+    const [selectedReason, setSelectedReason] = useState(null); // NEW STATE
     const [isCancelling, setIsCancelling] = useState(false);
 
     // Data Fetcher Helper
@@ -176,10 +177,13 @@ export default function TrackingPage() {
 
     // --- CANCELLATION HANDLER ---
     const handleCancelSubmit = async () => {
-        if (!cancelReason.trim()) return alert("Mohon isi alasan pembatalan");
+        const finalReason = selectedReason ? selectedReason : cancelReason;
+
+        if (!finalReason || !finalReason.trim()) return alert("Mohon pilih atau isi alasan pembatalan");
+
         setIsCancelling(true);
         try {
-            const res = await cancelOrder(transactionCode, cancelReason);
+            const res = await cancelOrder(transactionCode, finalReason);
             if (res.success) {
                 setShowCancelModal(false);
                 refreshOrderData(transactionCode);
@@ -192,6 +196,30 @@ export default function TrackingPage() {
         }
         setIsCancelling(false);
     };
+
+    const cancelOptions = [
+        {
+            id: 'too_long', label: 'Menunggu terlalu lama', icon: (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            )
+        },
+        {
+            id: 'change_menu', label: 'Ingin mengganti menu', icon: (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line>
+                </svg>
+            )
+        },
+        {
+            id: 'change_payment', label: 'Ingin ganti metode bayar', icon: (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line>
+                </svg>
+            )
+        }
+    ];
 
     return (
         <div className="page-container">
@@ -443,25 +471,103 @@ export default function TrackingPage() {
                 .btn-secondary { background: white; border: 1px solid var(--border); color: var(--text-secondary); font-weight: 600; }
                 .btn-danger-ghost { background: transparent; color: #DC2626; font-size: 14px; margin-top: 8px; align-self: center; text-decoration: underline; font-weight: 500; }
                 .btn-danger { background: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
+                .btn-red-gradient {
+                    background: linear-gradient(90deg, #F87171, #EF4444);
+                    color: white;
+                    box-shadow: 0 4px 6px rgba(239, 68, 68, 0.4);
+                }
 
                 /* MODAL */
                 .modal-overlay {
                     position: fixed;
                     inset: 0;
-                    background: rgba(0,0,0,0.5);
-                    z-index: 100;
+                    background: rgba(0,0,0,0.7);
+                    z-index: 1000;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    padding: 24px;
+                    padding: 20px; /* Safer padding */
+                    backdrop-filter: blur(5px);
                 }
                 .modal-content {
-                    background: white;
-                    padding: 32px;
+                    background: #FFFFFF !important;
+                    position: relative;
+                    padding: 32px 24px;
                     border-radius: 24px;
                     width: 100%;
-                    max-width: 360px;
+                    max-width: 360px; /* Slightly smaller for mobile card look */
+                    max-height: 85vh;
+                    overflow-y: auto;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
                 }
+
+                .cancel-option-card {
+                    display: flex;
+                    align-items: center;
+                    padding: 16px;
+                    border: 1.5px solid #E5E7EB;
+                    border-radius: 16px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    background: #FFFFFF;
+                    margin-bottom: 12px;
+                }
+                
+                .cancel-option-card.active {
+                    border-color: #FCD34D;
+                    background: #FFFBEB;
+                }
+                
+                .cancel-icon-bg {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 10px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-right: 16px;
+                    background: #F3F4F6;
+                    color: #4B5563;
+                }
+                
+                .cancel-option-card.active .cancel-icon-bg {
+                    background: #FDE68A;
+                    color: #B45309;
+                }
+
+                .radio-circle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 50%;
+                    border: 2px solid #D1D5DB;
+                    margin-left: auto;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .cancel-option-card.active .radio-circle {
+                    border-color: #F59E0B;
+                    background: #F59E0B;
+                }
+
+                .radio-check {
+                    color: white;
+                }
+                
+                .cancel-textarea {
+                    width: 100%;
+                    box-sizing: border-box; /* Fix width overflow */
+                    padding: 16px;
+                    border-radius: 16px;
+                    border: 1.5px solid #E5E7EB;
+                    font-family: inherit;
+                    font-size: 14px;
+                    resize: none;
+                    outline: none;
+                    transition: border-color 0.2s;
+                }
+                .cancel-textarea:focus { border-color: #F59E0B; }
             `}</style>
 
             {/* HEADER */}
@@ -490,10 +596,6 @@ export default function TrackingPage() {
                 {/* STATUS CARD */}
                 <div className="card" style={{ marginBottom: 32 }}>
                     <div className="status-header">
-                        {/* QUEUE NUMBER WITH BIG GRADIENT RING */}
-                        {/* QUEUE NUMBER WITH RGB GRADIENT RING */}
-                        {/* QUEUE NUMBER WITH RGB GRADIENT RING (FIXED VISIBILITY) */}
-                        {/* QUEUE NUMBER WITH RGB GRADIENT RING (FIXED ALIGNMENT) */}
                         <div style={{ position: 'relative', width: 160, height: 160, margin: '0 auto 24px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 
                             {/* Animated RGB Gradient Background - Layer 1 (Blur/Glow) */}
@@ -733,34 +835,125 @@ export default function TrackingPage() {
                 )}
             </div>
 
-            {/* MODAL (UPSCALED) */}
-            {showCancelModal && (
-                <div className="modal-overlay">
-                    <motion.div
-                        className="modal-content"
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                    >
-                        <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>Batalkan Pesanan?</h3>
-                        <p style={{ fontSize: 15, color: '#6B7280', marginBottom: 20, lineHeight: 1.5 }}>
-                            {orderStatus === 'preparing' ? "Pesanan sedang dimasak, butuh persetujuan kasir." : "Pesanan akan langsung dibatalkan."}
-                        </p>
-                        <textarea
-                            placeholder="Alasan pembatalan..."
-                            value={cancelReason}
-                            onChange={(e) => setCancelReason(e.target.value)}
-                            style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #E5E7EB', marginBottom: 20, fontSize: 15, fontFamily: 'inherit' }}
-                            rows={3}
-                        />
-                        <div style={{ display: 'flex', gap: 12 }}>
-                            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCancelModal(false)}>Tidak</button>
-                            <button className="btn btn-danger" style={{ flex: 1 }} onClick={handleCancelSubmit}>
-                                {isCancelling ? "..." : "Ya, Batalkan"}
+            {/* MASTER UI/UX CANCEL MODAL */}
+            <AnimatePresence>
+                {showCancelModal && (
+                    <div className="modal-overlay" style={{
+                        position: 'fixed',
+                        inset: 0,
+                        backgroundColor: 'rgba(0,0,0,0.7)',
+                        zIndex: 1000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '20px',
+                        backdropFilter: 'blur(5px)'
+                    }}>
+                        <motion.div
+                            className="modal-content"
+                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            style={{
+                                backgroundColor: '#FFFFFF',
+                                position: 'relative',
+                                padding: '24px',
+                                borderRadius: '24px',
+                                width: '100%',
+                                maxWidth: '340px',
+                                maxHeight: '80vh',
+                                overflowY: 'auto',
+                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                                color: '#1F2937' // Force text color inheritance
+                            }}
+                        >
+                            <button
+                                onClick={() => setShowCancelModal(false)}
+                                style={{
+                                    position: 'absolute',
+                                    top: 16,
+                                    right: 16,
+                                    background: '#F3F4F6',
+                                    border: 'none',
+                                    borderRadius: '50%',
+                                    width: 36,
+                                    height: 36,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#4B5563',
+                                    cursor: 'pointer',
+                                    zIndex: 10
+                                }}
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
                             </button>
-                        </div>
-                    </motion.div>
-                </div>
-            )}
+
+                            <h3 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: '#1F2937', textAlign: 'center', letterSpacing: '-0.5px', marginTop: 12 }}>
+                                Kenapa membatalkan pesanan?
+                            </h3>
+                            <p style={{ fontSize: 15, color: '#6B7280', marginBottom: 24, textAlign: 'center', lineHeight: 1.5 }}>
+                                Masukanmu membantu kami menjadi lebih baik.
+                            </p>
+
+                            <div style={{ marginBottom: 24 }}>
+                                {cancelOptions.map(option => (
+                                    <div
+                                        key={option.id}
+                                        className={`cancel-option-card ${selectedReason === option.label ? 'active' : ''}`}
+                                        onClick={() => setSelectedReason(option.label)}
+                                    >
+                                        <div className="cancel-icon-bg">
+                                            {option.icon}
+                                        </div>
+                                        <span style={{ fontSize: 15, fontWeight: 600, color: '#374151' }}>{option.label}</span>
+                                        <div className="radio-circle">
+                                            {selectedReason === option.label && (
+                                                <svg className="radio-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ marginBottom: 24 }}>
+                                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 600, color: '#374151' }}>
+                                    Alasan Lainnya (Opsional)
+                                </label>
+                                <textarea
+                                    className="cancel-textarea"
+                                    placeholder="Tulis alasanmu..."
+                                    value={cancelReason}
+                                    onChange={(e) => setCancelReason(e.target.value)}
+                                    rows={3}
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <button
+                                    className="btn btn-secondary"
+                                    style={{ flex: 1, height: 50, borderRadius: 14, background: '#F9FAFB', border: '1px solid #E5E7EB', color: '#6B7280' }}
+                                    onClick={() => setShowCancelModal(false)}
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    className="btn btn-red-gradient"
+                                    style={{ flex: 2, height: 50, borderRadius: 14, fontWeight: 700, fontSize: 16 }}
+                                    onClick={handleCancelSubmit}
+                                >
+                                    {isCancelling ? "Mengirim..." : "Kirim & Batalkan"}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
