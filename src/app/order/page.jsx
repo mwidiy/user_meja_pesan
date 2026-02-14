@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { getOrderByTransactionCode } from '../../services/api';
 
 export default function ReceiptPage() {
     const router = useRouter();
@@ -31,22 +32,78 @@ export default function ReceiptPage() {
                 const status = (paymentMethod === 'cash') ? 'unpaid' : 'paid';
 
                 // We store 'method' as the paymentMethod for display consistency
-                setOrderData({
-                    id,
-                    items,
-                    method: paymentMethod,
-                    date,
-                    meta: parsed.meta || {},
-                    status,
-                    transactionCode: parsed.transactionCode // Store it
-                });
-                return;
+                // If state has items, use it. OTHERWISE fetch from API.
+                if (items.length > 0) {
+                    setOrderData({
+                        id,
+                        items,
+                        method: paymentMethod,
+                        date,
+                        meta: parsed.meta || {},
+                        status,
+                        transactionCode: parsed.transactionCode
+                    });
+                    return;
+                }
+                // If items empty, let it fall through to API fetch below
+                // But we can extract the ID from parsed state to help the fetch
+                if (parsed.transactionCode || parsed.id) {
+                    const codeToFetch = parsed.transactionCode || parsed.id;
+                    getOrderByTransactionCode(codeToFetch).then(res => {
+                        if (res.success && res.data) {
+                            const order = res.data;
+                            setOrderData({
+                                id: order.id,
+                                items: order.items.map(i => ({
+                                    name: i.product.name,
+                                    price: i.priceSnapshot,
+                                    qty: i.quantity,
+                                    image: ''
+                                })),
+                                method: order.paymentMethod || 'QRIS',
+                                date: order.createdAt,
+                                meta: {},
+                                status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
+                                transactionCode: order.transactionCode
+                            });
+                        }
+                    }).catch(e => console.error(e));
+                    return; // Don't run fallback below
+                }
             }
         } catch (e) {
             // ignore parse errors
         }
-        // fallback empty
-        setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {}, status: 'paid', transactionCode: '-' });
+
+        // --- FALLBACK: FETCH FROM API IF URL STATE FAILED OR INCOMPLETE ---
+        const params = new URLSearchParams(window.location.search);
+        // Try getting ID from query param directly if state parsing failed
+        const fallbackId = params.get('orderId') || params.get('id');
+
+        if (fallbackId) {
+            getOrderByTransactionCode(fallbackId).then(res => {
+                if (res.success && res.data) {
+                    const order = res.data;
+                    setOrderData({
+                        id: order.id,
+                        items: order.items.map(i => ({
+                            name: i.product.name,
+                            price: i.priceSnapshot,
+                            qty: i.quantity,
+                            image: '' // url not critical here
+                        })),
+                        method: order.paymentMethod || 'QRIS',
+                        date: order.createdAt,
+                        meta: {},
+                        status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
+                        transactionCode: order.transactionCode
+                    });
+                }
+            }).catch(e => console.error(e));
+        } else {
+            // Only use dummy if NO ID found at all
+            setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {}, status: 'paid', transactionCode: '-' });
+        }
     }, []);
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');

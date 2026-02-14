@@ -116,15 +116,26 @@ export default function TrackingPage() {
                 if (parsed.queueNumber) setQueueNumber(parsed.queueNumber);
                 if (parsed.transactionCode) {
                     currentCode = parsed.transactionCode;
-                    setTransactionCode(currentCode);
-                    refreshOrderData(currentCode);
                 }
+            }
+
+            // --- FALLBACK: DIRECT PARAMETER ---
+            if (!currentCode) {
+                const directId = params.get('orderId') || params.get('id') || params.get('transactionCode');
+                if (directId) currentCode = directId;
+            }
+
+            if (currentCode) {
+                setTransactionCode(currentCode);
+                refreshOrderData(currentCode);
             } else {
-                // Demo Data for Development visualization
-                setOrderItems([
-                    { name: 'Ice Coffee Palm Sugar', price: 18000, qty: 1, image: '' },
-                    { name: 'Croissant Butter', price: 25000, qty: 2, image: '' }
-                ]);
+                // Only set dummy if NO code found
+                if (!parsed) {
+                    setOrderItems([
+                        { name: 'Ice Coffee Palm Sugar', price: 18000, qty: 1, image: '' },
+                        { name: 'Croissant Butter', price: 25000, qty: 2, image: '' }
+                    ]);
+                }
             }
         } catch (e) {
             console.error("Error parsing state:", e);

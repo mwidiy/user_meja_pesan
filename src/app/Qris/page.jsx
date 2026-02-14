@@ -1,52 +1,78 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import QRCode from 'react-qr-code'; // IMPORTED
+import { useRouter, useSearchParams } from 'next/navigation';
+import QRCode from 'react-qr-code';
 import { getDynamicUrl } from '../../services/api';
+import io from 'socket.io-client';
 
 export default function QrisPage() {
     const router = useRouter();
-    const [amount, setAmount] = useState(8000);
-    const [remaining, setRemaining] = useState(152);
+    const searchParams = useSearchParams();
+
+    // State
+    const [amount, setAmount] = useState(0);
+    const [remaining, setRemaining] = useState(300); // 5 minutes
     const [orderState, setOrderState] = useState(null);
-    const [qrisUrl, setQrisUrl] = useState(null);
-
     const [orderId, setOrderId] = useState(null);
-    const [isPaid, setIsPaid] = useState(false);
+
+    // QR State
     const [qrValue, setQrValue] = useState('');
-    const [loadingQr, setLoadingQr] = useState(false);
+    const [loadingQr, setLoadingQr] = useState(true);
+    const [error, setError] = useState(null);
+    const [isPaid, setIsPaid] = useState(false);
 
-    // 1. Parse URL Params FIRST
+    // 1. Initial Load & Socket Setup
     useEffect(() => {
+        // Parse Params
+        let idParam, amtParam;
         try {
-            const params = new URLSearchParams(window.location.search);
-            const raw = params.get('state');
-            const idParam = params.get('orderId');
-            const storeIdParam = params.get('storeId'); // Capture storeId if needed
-
-            if (idParam) setOrderId(idParam);
-
+            const raw = searchParams.get('state');
             if (raw) {
                 const parsed = JSON.parse(decodeURIComponent(raw));
                 setOrderState(parsed);
-                // Priority: Amount from URL state -> Default
-                if (parsed.subtotal) setAmount(parsed.subtotal);
+                idParam = parsed.id || parsed.transactionCode;
+                amtParam = parsed.subtotal || parsed.totalAmount;
             }
-        } catch (e) { }
+            // Fallback params
+            if (!idParam) idParam = searchParams.get('orderId');
+            if (idParam) setOrderId(idParam);
+            if (amtParam) setAmount(amtParam);
 
+        } catch (e) {
+            console.error("Parse Error", e);
+        }
+
+        // Timer
         const interval = setInterval(() => {
             setRemaining((prev) => (prev > 0 ? prev - 1 : 0));
         }, 1000);
-        return () => clearInterval(interval);
-    }, []); // Run ONCE on mount
 
-    // 2. Fetch Payment QR after Amount & ID are ready
+        // Socket.IO Listener for Webhook Updates
+        const socket = io(getDynamicUrl());
+        socket.on('connect', () => {
+            console.log("Socket connected for payment updates");
+            if (idParam) socket.emit('join_room', idParam); // Optional if using rooms
+        });
+
+        socket.on('order_update', (data) => {
+            console.log("Socket Update:", data);
+            if (data.transactionCode === idParam && data.status === 'Paid') {
+                handleSuccess(idParam);
+            }
+        });
+
+        return () => {
+            clearInterval(interval);
+            socket.disconnect();
+        };
+    }, [searchParams]);
+
+    // 2. Fetch QR Code Trigger
     useEffect(() => {
         if (!orderId || !amount) return;
-        if (loadingQr || qrValue) return;
+        if (qrValue) return; // Already loaded
 
-        const initPayment = async () => {
-            setLoadingQr(true);
+        const fetchQr = async () => {
             try {
                 const API_URL = getDynamicUrl();
                 const res = await fetch(`${API_URL}/api/payment/create-transaction`, {
@@ -54,65 +80,79 @@ export default function QrisPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         orderId: orderId,
-                        amount: amount,
-                        paymentMethod: 'QR',
-                        origin: window.location.origin // Kirim URL saat ini (misal: https://blablabla.loca.lt)
+                        amount: amount
                     })
                 });
+
                 const json = await res.json();
-                if (json.success && json.data) {
-                    setQrValue(json.data.qrString || json.data.paymentUrl);
+
+                // 1. Check if already Paid (Backend handles "Transaction already completed" check)
+                if (json.success && json.status === 'Paid') {
+                    console.log("Transaction already paid!");
+                    handleSuccess(orderId);
+                    return;
                 }
-            } catch (e) {
-                console.error("Payment Network Error", e);
+
+                // 2. Normal QR Flow
+                if (json.success && json.data) {
+                    if (json.data.qrString) {
+                        setQrValue(json.data.qrString);
+                        // Update amount if backend says so (e.g. fees)
+                        if (json.data.amount) setAmount(json.data.amount);
+                    } else if (json.data.paymentUrl) {
+                        setError("QR Code data not available (URL only).");
+                        window.location.href = json.data.paymentUrl; // Auto redirect fallback
+                    }
+                } else {
+                    throw new Error(json.message || "Gagal memuat QR");
+                }
+            } catch (err) {
+                console.error("QR Fetch Error:", err);
+                setError("Gagal memuat QR Code. Silakan coba lagi.");
             } finally {
                 setLoadingQr(false);
             }
         };
 
-        // Small delay to ensure state stability? No, useEffect dep handling is enough.
-        initPayment();
+        fetchQr();
     }, [orderId, amount]);
 
-    // POLLING CHECK STATUS
+    // 3. Polling Backup (Just in case Webhook/Socket is delayed)
     useEffect(() => {
-        if (!orderId) return;
+        if (!orderId || isPaid || !amount) return;
 
-        const checkStatus = async () => {
+        const poll = setInterval(async () => {
             try {
-                // Gunakan URL API dari environment atau relatif
                 const API_URL = getDynamicUrl();
-                const res = await fetch(`${API_URL}/api/orders/${orderId}`);
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json.success && json.data) {
-                        const order = json.data;
-                        // Cek status pembayaran
-                        if (order.paymentStatus === 'Paid') {
-                            setIsPaid(true);
-                            handleAutoRedirect(order);
-                        }
-                    }
+                const res = await fetch(`${API_URL}/api/payment/check-status/${orderId}?amount=${amount}`);
+                const json = await res.json();
+
+                if (json.status === 'Paid') {
+                    handleSuccess(orderId);
                 }
-            } catch (err) {
-                console.error("Polling error:", err);
+            } catch (e) {
+                // Ignore polling errors
             }
-        };
+        }, 5000); // Check every 5s
 
-        const pollInterval = setInterval(checkStatus, 3000); // Cek setiap 3 detik
-        return () => clearInterval(pollInterval);
-    }, [orderId]);
+        return () => clearInterval(poll);
+    }, [orderId, isPaid, amount]);
 
-    const handleAutoRedirect = (order) => {
-        // Prepare state for next page
-        // We can merge order info from backend or use existing orderState
-        const finalState = {
-            ...orderState,
-            status: 'paid', // Force valid status
-            id: order.transactionCode || orderId // Use real transaction code if available
-        };
-        const stateParam = encodeURIComponent(JSON.stringify(finalState));
-        router.push(`/order?state=${stateParam}`);
+    const handleSuccess = (id) => {
+        if (isPaid) return;
+        setIsPaid(true);
+        // Delay slightly for UX
+        setTimeout(() => {
+            // Re-construct state
+            const finalState = {
+                ...(orderState || {}),
+                status: 'paid',
+                id: id,
+                method: 'QRIS'
+            };
+            const param = encodeURIComponent(JSON.stringify(finalState));
+            router.push(`/order?state=${param}`);
+        }, 1000);
     };
 
     const formatTime = (sec) => {
@@ -121,446 +161,106 @@ export default function QrisPage() {
         return `${m}:${s}`;
     };
 
-    const handleNext = () => {
-        // Manual override (Optional)
-        // User finished payment (simulated), go to Order page
-        if (orderState) {
-            const stateParam = encodeURIComponent(JSON.stringify(orderState));
-            router.push(`/order?state=${stateParam}`);
-        } else {
-            router.push('/order');
-        }
-    };
-
     return (
-        <>
+        <div className="app">
             <style jsx global>{`
-        :root {
-            --bg-main: #2C3E50;
-            --card-bg: #FFFFFF;
-            --text-main: #1F2937;
-            --text-sub: #64748B;
-            --accent-red: #DC2626;
-            --accent-red-soft: #FEF2F2;
-            --border-soft: #E2E8F0;
-            --yellow: #FACC15;
-        }
-        * {
-            margin:0;
-            padding:0;
-            box-sizing:border-box;
-            font-family:'Inter','Poppins',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-        }
-        body {
-            min-height:100vh;
-            background:#111827;
-            display:flex;
-            justify-content:center;
-            align-items:flex-start;
-        }
-        .app {
-            width:100%;
-            max-width:414px;
-            min-height:100vh;
-            background:var(--bg-main);
-            color:#fff;
-            position:relative;
-            padding-top:80px;
-            padding-bottom:24px;
-            overflow:hidden;
-        }
+                :root {
+                    --bg-main: #2C3E50;
+                    --card-bg: #FFFFFF;
+                    --text-main: #1F2937;
+                    --text-sub: #64748B;
+                    --accent-red: #DC2626;
+                    --accent-red-soft: #FEF2F2;
+                    --border-soft: #E2E8F0;
+                }
+                * { margin:0; padding:0; box-sizing:border-box; font-family:'Inter',sans-serif; }
+                body { background:#111827; }
+                .app { width:100%; max-width:414px; margin:0 auto; min-height:100vh; background:var(--bg-main); padding-top:80px; padding-bottom:24px; position:relative; }
+                
+                .header { position:absolute; top:20px; left:0; right:0; text-align:center; color:#FFF; font-size:18px; font-weight:600; display:flex; align-items:center; justify-content:center; }
+                .btn-back { position:absolute; left:20px; background:none; border:none; cursor:pointer; display:flex; padding:5px; }
+                
+                .card { width:90%; margin:0 auto; background:var(--card-bg); border-radius:24px; padding:32px 24px; box-shadow:0 10px 30px rgba(0,0,0,0.2); text-align:center; position:relative; }
+                
+                .timer-pill { display:inline-block; background:var(--accent-red-soft); color:var(--accent-red); padding:8px 16px; border-radius:20px; font-weight:700; font-size:14px; margin-bottom:24px; }
+                
+                .amount-val { font-size:40px; font-weight:800; color:var(--bg-main); line-height:1; }
+                .amount-lbl { font-size:14px; color:var(--text-sub); margin-top:8px; margin-bottom:24px; }
+                
+                .qr-box { 
+                    width:240px; height:240px; margin:0 auto 24px; 
+                    background:#FFF; border:4px solid #F1F5F9; border-radius:16px;
+                    display:flex; align-items:center; justify-content:center; overflow:hidden;
+                }
+                
+                .decor-circle { width:30px; height:30px; background:var(--bg-main); border-radius:50%; position:absolute; top:35%; }
+                .decor-left { left:-15px; }
+                .decor-right { right:-15px; }
 
-        /* HEADER */
-        .qris-header {
-            position:absolute;
-            top:16px;
-            left:0;
-            right:0;
-            display:flex;
-            align-items:center;
-            justify-content:center; /* judul benar-benar di tengah */
-            pointer-events:none;   /* supaya klik default tidak mengganggu; tombol back override */
-        }
-        .btn-back {
-            position:absolute;
-            left:21px;
-            width:36px;
-            height:36px;
-            border-radius:999px;
-            border:none;
-            background:transparent; /* tidak ada kotak/bayangan */
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            cursor:pointer;
-            pointer-events:auto;
-            padding:0;
-        }
-        .btn-back img {
-            width:22px;
-            height:22px;
-            object-fit:contain;
-            display:block;
-        }
-        .header-title-wrap {
-            display:flex;
-            flex-direction:column;
-            align-items:center;
-            justify-content:center;
-            pointer-events:none;
-        }
-        .header-title {
-            font-size:18px;
-            font-weight:600;
-            color:#FFFFFF;
-        }
+                .spinner { width:40px; height:40px; border:4px solid #E2E8F0; border-top-color:#3B82F6; border-radius:50%; animation:spin 1s linear infinite; }
+                @keyframes spin { to { transform:rotate(360deg); } }
 
-        /* CONTAINER */
-        .qris-shell {
-            width:100%;
-            display:flex;
-            justify-content:center;
-            margin-top:8px;
-        }
-        .qris-card-shell {
-            width:327px;
-            height:auto;
-            position:relative;
-        }
+                .wallets { display:flex; justify-content:center; gap:10px; margin-top:20px; opacity:0.6; }
+                .wallet-icon { width:30px; height:30px; background:#EEE; border-radius:6px; }
+            `}</style>
 
-        .qris-card {
-            width:295px;
-            margin:0 auto;
-            background:var(--card-bg);
-            border-radius:24px;
-            box-shadow:0 25px 50px rgba(0,0,0,0.25);
-            padding:40px 32px 24px;
-            position:relative;
-        }
+            <div className="header">
+                <button className="btn-back" onClick={() => router.back()}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+                </button>
+                Pembayaran QRIS
+            </div>
 
-        /* Dekor bulatan kiri/kanan */
-        .qris-decoration-left,
-        .qris-decoration-right {
-            width:32px;
-            height:32px;
-            border-radius:50px;
-            background:var(--bg-main);
-            position:absolute;
-            top:304px;
-        }
-        .qris-decoration-left {
-            left:-16px;
-        }
-        .qris-decoration-right {
-            right:-16px;
-        }
+            <div className="card">
+                <div className="decor-circle decor-left"></div>
+                <div className="decor-circle decor-right"></div>
 
-        /* TIMER PILL */
-        .timer-pill {
-            width:100%;
-            display:flex;
-            justify-content:center;
-            margin-bottom:24px;
-        }
-        .timer-pill-inner {
-            background:var(--accent-red-soft);
-            border-radius:9999px;
-            padding:10px 24px;
-        }
-        .timer-text {
-            color:var(--accent-red);
-            font-size:14px;
-            font-weight:700;
-            letter-spacing:0.35px;
-            text-align:center;
-        }
+                <div className="timer-pill">
+                    {remaining > 0 ? `Selesaikan dalam ${formatTime(remaining)}` : 'Waktu Habis'}
+                </div>
 
-        /* AMOUNT */
-        .amount-block {
-            text-align:center;
-            margin-bottom:18px;
-        }
-        .amount-value {
-            font-size:48px;
-            font-weight:900;
-            color:var(--bg-main);
-            line-height:1.1;
-        }
-        .amount-label {
-            margin-top:6px;
-            font-size:14px;
-            font-weight:500;
-            color:var(--text-sub);
-        }
+                <div className="amount-val">Rp {(amount || 0).toLocaleString('id-ID')}</div>
+                <div className="amount-lbl">Total Pembayaran</div>
 
-        .divider {
-            width:100%;
-            border-top:2px solid var(--border-soft);
-            margin:12px 0 18px;
-        }
+                <div className="qr-box">
+                    {loadingQr ? (
+                        <div className="spinner"></div>
+                    ) : error ? (
+                        <div style={{ color: 'red', fontSize: '13px', padding: '10px' }}>{error}</div>
+                    ) : qrValue ? (
+                        <QRCode
+                            value={qrValue}
+                            size={200}
+                            style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                            viewBox={`0 0 256 256`}
+                        />
+                    ) : null}
+                </div>
 
-        /* QR CONTAINER */
-        .qr-wrapper {
-            display:flex;
-            justify-content:center;
-            margin-bottom:24px;
-        }
-        .qr-card {
-            width:240px;
-            height:240px;
-            border-radius:16px;
-            background:#ffffff;
-            outline:4px solid #F1F5F9;
-            outline-offset:-4px;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-        }
-        .qr-inner {
-            width:200px;
-            height:200px;
-            background:#ffffff;
-            border-radius:12px;
-            overflow:hidden;
-            position:relative;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-        }
-        .qr-inner img {
-            width:100%;
-            height:100%;
-            object-fit:contain;
-            display:block;
-        }
+                <img src="/assets/Qris_Logo.svg" alt="QRIS" style={{ height: '32px', marginBottom: '16px' }} />
 
-        /* LOGO QRIS / PAYMENT */
-        .qris-logo-wrap {
-            display:flex;
-            justify-content:center;
-            margin-bottom:20px;
-        }
-        .qris-logo {
-            width:126px;
-            height:48px;
-            object-fit:contain;
-            display:block;
-        }
+                <p style={{ fontSize: '13px', color: '#666', lineHeight: '1.5' }}>
+                    Scan QR ini dengan GoPay, OVO, Dana, ShopeePay atau Mobile Banking Anda.
+                </p>
 
-        /* E-WALLET LOGOS */
-        .wallet-row {
-            display:flex;
-            justify-content:center;
-            gap:8px;
-            margin-bottom:10px;
-        }
-        .wallet-box {
-            width:40px;
-            height:40px;
-            border-radius:8px;
-            background:#E5E7EB;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            overflow:hidden;
-        }
-        .wallet-box img {
-            max-width:100%;
-            max-height:100%;
-            object-fit:contain;
-            display:block;
-        }
-
-        .instruction-text {
-            margin-top:10px;
-            font-size:14px;
-            color:#4B5563;
-            text-align:center;
-            line-height:1.6;
-        }
-
-        /* REFRESH */
-        .refresh-row {
-            margin-top:24px;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            gap:8px;
-            cursor:pointer;
-        }
-        /* perbaiki container icon agar tidak terlihat kotak putih */
-        .refresh-icon {
-            width:18px;
-            height:18px;
-            flex-shrink:0;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            background:transparent;     /* pastikan transparan */
-            border:none;                /* tidak ada border */
-            padding:0;                  /* tidak ada padding */
-            border-radius:999px;        /* icon terasa bulat / soft */
-            overflow:hidden;            /* potong tepian putih dari SVG kalau ada */
-        }
-        .refresh-icon img {
-            width:100%;
-            height:100%;
-            object-fit:contain;
-            display:block;
-            background:transparent;     /* kalau UA memberi bg, paksa transparan */
-        }
-        .refresh-text {
-            font-size:14px;
-            font-weight:500;
-            color:#FFFFFF;
-        }
-
-        /* NEXT BUTTON SMALL */
-        .next-flow-btn {
-            margin-top: 32px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-left: auto;
-            margin-right: auto;
-            transition: background 0.2s;
-        }
-        .next-flow-btn:hover {
-            background: rgba(255,255,255,0.2);
-        }
-    `}</style>
-            <div className="app">
-                <header className="qris-header">
-                    <button className="btn-back" onClick={() => router.back()}>
-                        <img src="/assets/Back.svg" alt="Kembali" />
-                    </button>
-                    <div className="header-title-wrap">
-                        <div className="header-title">Pembayaran Qris</div>
-                    </div>
-                </header>
-
-                <div className="qris-shell">
-                    <div className="qris-card-shell">
-                        <div className="qris-card">
-                            <div className="qris-decoration-left"></div>
-                            <div className="qris-decoration-right"></div>
-
-                            <div className="timer-pill">
-                                <div className="timer-pill-inner">
-                                    <div className="timer-text">
-                                        {remaining > 0 ? `Selesaikan dalam ${formatTime(remaining)}` : 'Waktu pembayaran habis'}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="amount-block">
-                                <div className="amount-value">Rp {amount.toLocaleString('id-ID')}</div>
-                                <div className="amount-label">Total Pembayaran</div>
-                            </div>
-
-                            <div className="divider"></div>
-
-                            <div className="qr-wrapper">
-                                <div className="qr-card">
-                                    <div className="qr-inner">
-                                        {loadingQr ? (
-                                            <div style={{ color: '#888' }}>Memuat QR...</div>
-                                        ) : qrValue ? (
-                                            <QRCode
-                                                value={qrValue}
-                                                size={180}
-                                                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                                                viewBox={`0 0 256 256`}
-                                            />
-                                        ) : (
-                                            <img src="/assets/QR_Code.svg" alt="QRIS Fallback" />
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="qris-logo-wrap">
-                                <img src="/assets/Qris_Logo.svg" alt="QRIS" className="qris-logo" />
-                            </div>
-
-                            <div className="divider"></div>
-
-                            <div className="wallet-row">
-                                <div className="wallet-box"><img src="/assets/Icon_Q1.svg" alt="Dana" /></div>
-                                <div className="wallet-box"><img src="/assets/Icon_Q2.svg" alt="GoPay" /></div>
-                                <div className="wallet-box"><img src="/assets/Icon_Q3.svg" alt="OVO" /></div>
-                                <div className="wallet-box"><img src="/assets/Icon_Q4.svg" alt="LinkAja" /></div>
-                            </div>
-
-                            <p className="instruction-text">
-                                Scan QR ini dengan aplikasi E‑Wallet atau Mobile Banking Anda.
-                            </p>
-                        </div>
-
-                        <div className="refresh-row" onClick={() => { setRemaining(152); alert("QR Refreshed (Demo)"); }}>
-                            <span className="refresh-icon">
-                                <img src="/assets/Refresh_1.svg" alt="Refresh" />
-                            </span>
-                            <span className="refresh-text">Refresh QR Code</span>
-                        </div>
-
-                        <div style={{ marginTop: '20px', textAlign: 'center' }}>
-                            <button
-                                onClick={async () => {
-                                    if (!orderId) return alert("Order ID belum ada");
-                                    try {
-                                        const API_URL = getDynamicUrl();
-                                        const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
-                                            method: 'PUT',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ paymentStatus: 'Paid' })
-                                        });
-
-                                        if (!res.ok) {
-                                            const errText = await res.text();
-                                            throw new Error(errText || res.statusText);
-                                        }
-
-                                        // Update state manually so UI reacts immediately
-                                        setIsPaid(true);
-
-                                        // Manual Redirect Logic
-                                        const finalState = {
-                                            ...orderState,
-                                            status: 'paid',
-                                            id: orderId
-                                        };
-                                        const stateParam = encodeURIComponent(JSON.stringify(finalState));
-                                        alert("Berhasil! Mengalihkan ke halaman Order...");
-                                        router.push(`/order?state=${stateParam}`);
-
-                                    } catch (e) {
-                                        console.error(e);
-                                        alert("Gagal simulasi. Cek console.");
-                                    }
-                                }}
-                                style={{
-                                    background: '#FACC15', color: '#000', border: 'none',
-                                    padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold'
-                                }}
-                            >
-                                🔨 Simulasi Bayar (DEV) - Instant
-                            </button>
-                        </div>
-
-                        <button className="next-flow-btn" onClick={handleNext}>
-                            Lanjut <span style={{ fontSize: '12px' }}>➜</span>
-                        </button>
-                    </div>
+                <div className="wallets">
+                    {/* Placeholder icons can go here */}
+                    <div className="wallet-icon"></div>
+                    <div className="wallet-icon"></div>
+                    <div className="wallet-icon"></div>
                 </div>
             </div>
-        </>
+
+            {isPaid && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 99,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#FFF'
+                }}>
+                    <div style={{ fontSize: '50px', marginBottom: '20px' }}>✅</div>
+                    <h2>Pembayaran Berhasil!</h2>
+                    <p>Mengalihkan...</p>
+                </div>
+            )}
+        </div>
     );
 }
