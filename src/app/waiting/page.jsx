@@ -1,26 +1,26 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getOrderByTransactionCode, getImageUrl, getDynamicUrl, cancelOrder } from '../../services/api';
 import { io } from 'socket.io-client';
 import QRCode from "react-qr-code";
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function TrackingPage() {
     const router = useRouter();
 
     const [orderItems, setOrderItems] = useState([]);
-    const [queueNumber, setQueueNumber] = useState('-'); // Waiting for data
-    const [ordersAhead, setOrdersAhead] = useState(0); // New State
+    const [queueNumber, setQueueNumber] = useState('-');
+    const [ordersAhead, setOrdersAhead] = useState(0);
     const [orderStatus, setOrderStatus] = useState('received'); // received | preparing | ready | cancelled
-    const [paymentStatus, setPaymentStatus] = useState('paid'); // paid | unpaid
-    const [transactionCode, setTransactionCode] = useState('-'); // Added missing state
-    const [customerName, setCustomerName] = useState('-'); // Added for WA message
+    const [paymentStatus, setPaymentStatus] = useState('paid');
+    const [transactionCode, setTransactionCode] = useState('-');
+    const [customerName, setCustomerName] = useState('-');
     const [estimatedTime, setEstimatedTime] = useState('-');
-    const [timeLeft, setTimeLeft] = useState(null); // (mm:ss) countdown
 
     // Cancellation & Refund State
-    const [cancellationStatus, setCancellationStatus] = useState(null); // Requested, Approved, Rejected, AutoCancelled
-    const [refundStatus, setRefundStatus] = useState(null); // Pending, Refunded
+    const [cancellationStatus, setCancellationStatus] = useState(null);
+    const [refundStatus, setRefundStatus] = useState(null);
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
     const [isCancelling, setIsCancelling] = useState(false);
@@ -38,7 +38,6 @@ export default function TrackingPage() {
                     if (order.transactionCode && !currentHistory.includes(order.transactionCode)) {
                         currentHistory.push(order.transactionCode);
                         localStorage.setItem('order_history', JSON.stringify(currentHistory));
-                        console.log("✅ Auto-saved order to history:", order.transactionCode);
                     }
                 } catch (e) { console.error("History save error:", e); }
 
@@ -48,7 +47,7 @@ export default function TrackingPage() {
                         name: item.product.name,
                         price: item.priceSnapshot,
                         qty: item.quantity,
-                        image: item.product.image ? getImageUrl(item.product.image) : '/assets/placeholder.png'
+                        image: item.product.image ? getImageUrl(item.product.image) : ''
                     }));
                     setOrderItems(mappedItems);
                 }
@@ -64,7 +63,6 @@ export default function TrackingPage() {
                 setOrderStatus(mappedStatus);
                 setCancellationStatus(order.cancellationStatus);
                 setRefundStatus(order.refundStatus);
-                // Also set the cancellation reason if available (for Admin Rejection display)
                 if (order.cancellationReason) {
                     setCancelReason(order.cancellationReason);
                 }
@@ -80,12 +78,12 @@ export default function TrackingPage() {
                 if (order.status === 'Pending') {
                     setOrdersAhead(`Antrean ke-${order.queuePosition}`);
                     if (res.data.predictedServiceTime) {
-                        setEstimatedTime(`Selesai jam ${res.data.predictedServiceTime}`);
+                        setEstimatedTime(`Estimasi selesai jam ${res.data.predictedServiceTime}`);
                     }
                 } else if (order.status === 'Processing') {
                     setOrdersAhead("Sedang Disiapkan");
                     if (res.data.predictedServiceTime) {
-                        setEstimatedTime(`Selesai jam ${res.data.predictedServiceTime}`);
+                        setEstimatedTime(`Estimasi selesai jam ${res.data.predictedServiceTime}`);
                     }
                 } else if (order.status === 'Cancelled') {
                     setOrdersAhead("Pesanan Dibatalkan");
@@ -121,10 +119,10 @@ export default function TrackingPage() {
                     refreshOrderData(currentCode);
                 }
             } else {
-                // Demo Data
+                // Demo Data for Development visualization
                 setOrderItems([
-                    { name: 'Teh Manis', price: 3000, qty: 1, image: '/assets/placeholder.png' },
-                    { name: 'Es Beng Beng', price: 5000, qty: 1, image: '/assets/placeholder.png' }
+                    { name: 'Ice Coffee Palm Sugar', price: 18000, qty: 1, image: '' },
+                    { name: 'Croissant Butter', price: 25000, qty: 2, image: '' }
                 ]);
             }
         } catch (e) {
@@ -136,7 +134,6 @@ export default function TrackingPage() {
 
         socket.on('connect', () => {
             console.log('🔌 Connected to socket for updates');
-            // Join Store Room for optimized/secured updates
             const storedTable = localStorage.getItem('customer_table');
             if (storedTable) {
                 try {
@@ -144,13 +141,11 @@ export default function TrackingPage() {
                     const sid = parsed.location?.storeId;
                     if (sid) {
                         socket.emit('join_store', sid);
-                        console.log(`🔌 Joining Room: store_${sid}`);
                     }
                 } catch (e) { }
             }
         });
 
-        // Listen for ANY order update
         socket.on('order_status_updated', (updatedOrder) => {
             console.log('🔔 Order Update Event:', updatedOrder);
             if (currentCode) {
@@ -175,7 +170,6 @@ export default function TrackingPage() {
     const handleWhatsAppClick = () => {
         const phoneNumber = "62895808953200"; // Admin Number
         const message = `Halo Kak, saya *${customerName}* dengan Order ID *${transactionCode}*.\n\nStatus pesanan saya sekarang: *${ordersAhead}*. \nMohon informasinya ya, terima kasih! 🙏`;
-
         const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
     };
@@ -200,347 +194,573 @@ export default function TrackingPage() {
     };
 
     return (
-        <>
+        <div className="page-container">
             <style jsx global>{`
-:root {
-  --bg-page: #F9FAFB;
-  --bg-card: #FFFFFF;
-  --bg-header: #FFFFFF;
-  --text-main: #111827;
-  --text-sub: #6B7280;
-  --text-dark: #374151;
-  --primary-yellow: #F0C419;
-  --primary-yellow-soft: #FFFBEB;
-  --primary-orange: #F59E0B;
-  --primary-green: #22C55E;
-  --border-soft: #E5E7EB;
-  --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 6px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.10);
-  --shadow-footer: 0 -4px 12px rgba(0,0,0,0.08);
-  --radius-lg: 24px;
-  --radius-md: 16px;
-  --radius-pill: 9999px;
-}
-* { margin:0; padding:0; box-sizing:border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-body { margin:0; min-height:100vh; background:#FFFFFF; display:flex; justify-content:center; align-items:flex-start; }
-.frame { width:100%; max-width:414px; min-height:100vh; background:#FFFFFF; overflow:hidden; display:flex; flex-direction:column; }
-.body { flex:1; background:var(--bg-page); display:flex; flex-direction:column; }
-.header { height:60px; background:var(--bg-header); box-shadow:var(--shadow-xs); display:flex; align-items:center; justify-content:center; position:sticky; top:0; z-index:10; padding:0 20px; }
-.header .button { position:absolute; left:20px; cursor:pointer; background:transparent; border:none; padding:0; width:28px; height:28px; display:flex; align-items:center; justify-content:center; }
-.header .button img { width:22px; height:22px; object-fit:contain; display:block; }
-.header .text-wrapper { font-weight:600; font-size:18px; }
-.main { flex:1; display:flex; flex-direction:column; gap:20px; padding:16px 0 24px; }
-.div-2 { margin:24px auto 0; width:335px; background:var(--bg-card); border-radius:var(--radius-lg); box-shadow:var(--shadow-md); padding-bottom:24px; display:flex; flex-direction:column; gap:32px; }
-.div-wrapper { margin:32px auto 0; width:271px; }
-.div-3 { width:208px; height:208px; margin:0 auto; position:relative; }
-.group-wrapper { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-.group .img { position:absolute; top:-7px; left:-7px; width:221px; height:221px; }
-.div-4 { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; gap:8px; }
-.div-5 { margin-top:54px; display:flex; justify-content:center; }
-.text-wrapper-2 { font-weight:800; font-size:72px; color:var(--text-main); line-height:1; }
-.div-6 { display:flex; justify-content:center; }
-.text-wrapper-3 { font-size:14px; font-weight:500; color:var(--text-sub); }
-.div-7 { margin:0 auto; width:271px; }
-.div-8 { display:flex; gap:8px; align-items:flex-start; }
-.div-9,.div-11,.div-15 { display:flex; flex-direction:column; align-items:center; gap:8px; flex:1; }
-.i-wrapper,.div-12,.div-16 { width:40px; height:40px; border-radius:var(--radius-pill); display:flex; align-items:center; justify-content:center; }
-.i-wrapper { background:var(--primary-green); }
-.div-12 { background:var(--primary-yellow); }
-.div-16 { background:#E5E7EB; }
-.text-wrapper-4,.text-wrapper-5,.text-wrapper-6 { font-size:12px; line-height:16px; text-align:center; }
-.text-wrapper-4 { color:#374151; }
-.text-wrapper-5 { font-weight:600; color:var(--text-main); }
-.text-wrapper-6 { color:#9CA3AF; }
-.div-10,.div-14 { width:44px; height:4px; align-self:center; border-radius:999px; }
-.div-10 { background:var(--primary-yellow); }
-.div-14 { background:#E5E7EB; }
-.div-18 { margin:0 auto; width:271px; height:60px; background:var(--primary-yellow-soft); border-radius:16px; display:flex; align-items:center; padding:0 16px; gap:12px; }
-.div-20 { margin:0 auto 24px; width:335px; background:var(--bg-card); border-radius:16px; box-shadow:var(--shadow-md); padding-bottom:16px; display:flex; flex-direction:column; }
-.h-2 { margin:24px 24px 0; }
-.text-wrapper-9 { font-size:16px; font-weight:600; color:var(--text-main); }
-.order-list { list-style:none; margin:16px 0 0; padding:0 24px 0; display:flex; flex-direction:column; gap:16px; }
-.div-21,.div-25 { width:100%; display:flex; }
-.div-22 { display:flex; gap:16px; width:100%; }
-.gemini-generated { width:64px; height:64px; border-radius:12px; object-fit:cover; flex-shrink:0; }
-.div-23 { flex:1; display:flex; flex-direction:column; gap:4px; }
-.div-24,.div-26 { display:flex; justify-content:space-between; align-items:center; }
-.text-wrapper-10,.text-wrapper-13,.text-wrapper-11 { font-size:14px; font-weight:600; color:var(--text-main); }
-.text-wrapper-12 { font-size:12px; color:var(--text-sub); }
-.div-27 { margin:15px 24px 0; padding:12px 13px; background:#FEFCE8; border-radius:12px; border:1px solid #FEF08A; display:flex; align-items:flex-start; gap:8px; }
-.text-wrapper-14 { font-size:12px; font-weight:500; color:#374151; }
-.p { font-size:12px; color:#4B5563; }
-.div-30 { margin:14px 24px 0; padding-top:14px; border-top:1px solid #F3F4F6; }
-.div-31 { display:flex; justify-content:space-between; align-items:center; }
-.text-wrapper-15 { font-size:14px; font-weight:500; color:#374151; }
-.text-wrapper-16 { font-size:16px; font-weight:700; color:var(--text-main); }
-.footer { width:100%; max-width:414px; background:var(--bg-card); box-shadow:var(--shadow-footer); padding:16px 20px 16px; }
-.div-32 { display:flex; gap:12px; margin-bottom:12px; }
-.button-2, .button-3, .button-4 { border-radius:12px; border:2px solid #D1D5DB; display:flex; align-items:center; justify-content:center; gap:8px; padding:0 12px; height:48px; background:transparent; cursor:pointer; }
-.button-2 { flex:1; } .button-3 { flex:1.1; }
-.button-4 { width:100%; margin-top:8px; background:var(--primary-yellow); border:none; }
-.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border-width:0; }
+                :root {
+                    --bg-page: #F3F4F6;
+                    --bg-card: #FFFFFF;
+                    --primary: #F59E0B;
+                    --primary-hover: #D97706;
+                    --text-main: #111827;
+                    --text-secondary: #6B7280;
+                    --border: #E5E7EB;
+                    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+                    --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+                    --radius: 20px;
+                }
+                body {
+                    background: var(--bg-page);
+                    margin: 0;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                    -webkit-font-smoothing: antialiased;
+                }
+                button { cursor: pointer; border: none; outline: none; font-family: inherit; -webkit-tap-highlight-color: transparent; }
             `}</style>
-            <div className="frame">
-                <div className="body">
-                    <header className="header">
-                        <button className="button" type="button" aria-label="Kembali" onClick={() => router.back()}>
-                            <img src="/assets/kembali.svg" alt="Kembali" />
-                        </button>
-                        <h1 className="text-wrapper">Lacak Pesanan</h1>
-                        <button className="top-icon" type="button" aria-label="Chat WA Admin" onClick={handleWhatsAppClick}>
-                            <img src="/assets/wa.svg" alt="Chat WA" />
-                        </button>
-                    </header>
+            <style jsx>{`
+                .page-container {
+                    width: 100%;
+                    max-width: 480px; /* Standard mobile width */
+                    margin: 0 auto;
+                    min-height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    background: var(--bg-page);
+                    padding-bottom: 24px;
+                }
+                
+                .header-bar {
+                    background: var(--bg-card);
+                    padding: 20px 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    position: sticky;
+                    top: 0;
+                    z-index: 50;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+                }
+                .back-btn {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 50%;
+                    background: #f9fafb;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: background 0.2s;
+                }
+                .back-btn:active { background: #e5e7eb; }
+                .title { font-weight: 700; font-size: 18px; color: var(--text-main); }
+                
+                .main-content {
+                    flex: 1;
+                    padding: 24px;
+                    padding-top: 40px; /* EXTRA TOP SPACE to separate from Header */
+                    padding-bottom: 40px; /* EXTRA BOTTOM SPACE to separate from Footer */
+                    display: flex;
+                    flex-direction: column;
+                    gap: 32px; /* INCREASED GAP to 32px for more breathing room */
+                }
 
-                    {paymentStatus === 'unpaid' && (
-                        <div style={{ background: '#FEF3C7', padding: '10px 20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: '#92400E' }}>Pesanan belum dibayar. Silakan ke kasir.</span>
-                        </div>
-                    )}
+                /* CARD STYLES */
+                .card {
+                    background: var(--bg-card);
+                    border-radius: var(--radius);
+                    padding: 32px 24px;
+                    box-shadow: var(--shadow-md);
+                }
 
-                    <main className="main">
-                        <section className="div-2">
-                            <h2 className="visually-hidden">Status Pesanan</h2>
-                            <div className="div-wrapper">
-                                <div className="div-3">
-                                    <div className="group-wrapper">
-                                        <div className="group">
-                                            <img className="img" src="/assets/Ring.svg" alt="" />
-                                            <img className="img" src="/assets/Ring.svg" alt="" />
-                                        </div>
-                                    </div>
-                                    <div className="div-4">
-                                        <div className="div-5">
-                                            {orderStatus === 'ready' ? (
-                                                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-                                            ) : orderStatus === 'preparing' ? (
-                                                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z" /><line x1="6" y1="17" x2="18" y2="17" /></svg>
-                                            ) : orderStatus === 'cancelled' ? (
-                                                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-                                            ) : (
-                                                <div className="text-wrapper-2">{queueNumber}</div>
-                                            )}
-                                        </div>
-                                        <div className="div-6">
-                                            <div className="text-wrapper-3">
-                                                {orderStatus === 'ready' ? "Pesanan Selesai" :
-                                                    orderStatus === 'cancelled' ? "Pesanan Dibatalkan" :
-                                                        orderStatus === 'preparing' ? "Sedang Dimasak" : "Urutan Antrean"}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                /* STATUS SECTION (UPSCALED) */
+                .status-header {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    margin-bottom: 32px;
+                }
+                
+                /*-- GRADIENT RING FOR QUEUE NUMBER (BIGGER) --*/
+                .gradient-ring-container {
+                    position: relative;
+                    width: 160px;
+                    height: 160px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 24px;
+                }
+                .gradient-ring-bg {
+                    position: absolute;
+                    inset: 0;
+                    border-radius: 50%;
+                    background: conic-gradient(from 0deg, #F59E0B, #FFEDD5, #F59E0B);
+                }
+                .status-icon-inner {
+                    position: absolute;
+                    inset: 10px; /* Thickness determined by offset */
+                    border-radius: 50%;
+                    background: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: inset 0 4px 6px rgba(0,0,0,0.05);
+                }
+                
+                .status-label {
+                    font-size: 24px;
+                    font-weight: 800;
+                    color: var(--text-main);
+                    margin-bottom: 8px;
+                    letter-spacing: -0.5px;
+                }
+                .status-desc {
+                    font-size: 16px;
+                    color: var(--text-secondary);
+                    line-height: 1.5;
+                }
+                
+                /* PROGRESS BAR (UPSCALED) */
+                .progress-wrapper {
+                    margin-top: 32px;
+                }
+                .steps-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 16px;
+                    position: relative;
+                    z-index: 2;
+                }
+                .step-item {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 8px;
+                    flex: 1;
+                    opacity: 0.5;
+                    transition: opacity 0.3s;
+                }
+                .step-item.active { opacity: 1; }
+                
+                .step-icon {
+                    width: 48px;
+                    height: 48px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: #F3F4F6;
+                    border-radius: 50%;
+                    color: #6B7280;
+                    margin-bottom: 4px;
+                    transition: all 0.3s;
+                }
+                .step-item.active .step-icon {
+                    background: #FEF3C7;
+                    color: #D97706;
+                    box-shadow: 0 4px 6px rgba(245, 158, 11, 0.2);
+                }
+                .step-item.completed .step-icon {
+                    background: #D1FAE5;
+                    color: #059669;
+                }
 
-                            <div className="div-7">
-                                <nav className="div-8">
-                                    <div className="div-9">
-                                        <div className="i-wrapper" style={{ background: '#22C55E' }}>
-                                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10L8 14L16 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                        </div>
-                                        <div className="text-wrapper-4">Pesanan Diterima</div>
-                                    </div>
-                                    <div className={orderStatus === 'preparing' || orderStatus === 'ready' ? 'div-10' : 'div-14'} />
-                                    <div className="div-11">
-                                        <div className={orderStatus === 'preparing' || orderStatus === 'ready' ? 'div-12' : 'div-16'} style={{ background: (orderStatus === 'preparing' || orderStatus === 'ready') ? '#F59E0B' : '#E5E7EB' }}>
-                                            <svg className="i-2" width="18" height="20" viewBox="0 0 18 20" fill="none"><path d="M9 2L2 6V10C2 14.5 5 18 9 18C13 18 16 14.5 16 10V6L9 2Z" fill="white" /></svg>
-                                        </div>
-                                        <div className="text-wrapper-5">Sedang Disiapkan</div>
-                                    </div>
-                                    <div className={orderStatus === 'ready' ? 'div-10' : 'div-14'} />
-                                    <div className="div-15">
-                                        <div className={orderStatus === 'ready' ? 'i-wrapper' : 'div-16'} style={{ background: orderStatus === 'ready' ? '#22C55E' : '#E5E7EB' }}>
-                                            {orderStatus === 'ready' ? (
-                                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10L8 14L16 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                            ) : (
-                                                <svg className="i-3" width="14" height="20" viewBox="0 0 14 20" fill="none"><path d="M12 8H10V2H4V8H2L7 13L12 8Z" fill="#9CA3AF" /></svg>
-                                            )}
-                                        </div>
-                                        <div className="text-wrapper-6" style={{ fontWeight: orderStatus === 'ready' ? 600 : 400, color: orderStatus === 'ready' ? '#111827' : '#9CA3AF' }}>Pesanan Selesai</div>
-                                    </div>
-                                </nav>
-                            </div>
+                .step-label {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: var(--text-main);
+                }
 
-                            <div className="div-18">
-                                <svg className="i-4" width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="8" stroke="#F59E0B" strokeWidth="2" /><path d="M9 5V9L12 12" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" /></svg>
-                                <span className="span">Status:</span>
-                                <span className="span-2">
-                                    <span style={{ display: 'block', color: '#D97706', fontWeight: '800', fontSize: 18 }}>
-                                        {ordersAhead || "Menunggu Konfirmasi"}
-                                    </span>
-                                    {estimatedTime && (
-                                        <span style={{ display: 'block', fontSize: 14, color: '#059669', marginTop: 4 }}>🕑 {estimatedTime}</span>
-                                    )}
-                                </span>
-                            </div>
-                            {/* Cancellation Reason Display */}
-                            {(orderStatus === 'cancelled' && cancellationStatus === 'RejectedByAdmin') && (
-                                <div style={{ margin: '12px 24px 0', padding: '12px', background: '#FEF2F2', borderRadius: 12, border: '1px solid #FECACA' }}>
-                                    <p style={{ fontSize: 12, fontWeight: 600, color: '#DC2626' }}>
-                                        ⚠️ Pesanan Dibatalkan Kasir
-                                    </p>
-                                    <p style={{ fontSize: 14, color: '#7F1D1D', marginTop: 4 }}>
-                                        {/* Since backend returns reason in cancellationReason field */}
-                                        Alasan: {cancelReason || "Tidak ada alasan spesifik"}
-                                    </p>
-                                </div>
-                            )}
-                        </section>
+                .progress-bar-container {
+                    height: 8px;
+                    background: #E5E7EB;
+                    border-radius: 4px;
+                    position: relative;
+                    margin: 0 12%; 
+                    overflow: hidden;
+                }
+                .progress-bar-fill {
+                    height: 100%;
+                    background: linear-gradient(90deg, #3B82F6, #8B5CF6, #EC4899, #F59E0B); /* RGB GEMINI GRADIENT */
+                    border-radius: 4px;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    box-shadow: 0 0 12px rgba(139, 92, 246, 0.6); /* GLOW EFFECT */
+                }
 
-                        <section className="div-20">
-                            <div className="h-2"><h2 className="text-wrapper-9">Rincian Pesanan</h2></div>
-                            <ul className="order-list">
-                                {orderItems.length === 0 ? (
-                                    <li style={{ padding: '12px 24px', color: '#6B7280' }}>Tidak ada item</li>
-                                ) : (
-                                    orderItems.map((it, idx) => (
-                                        <li className="div-21" key={idx}>
-                                            <div className="div-22">
-                                                <img className="gemini-generated" src={it.image || '/assets/placeholder.png'} alt={it.name} />
-                                                <div className="div-23">
-                                                    <div className="div-24">
-                                                        <div className="text-wrapper-10">{it.name}</div>
-                                                        <div className="text-wrapper-11">{formatRupiah(it.price)}</div>
-                                                    </div>
-                                                    <div className="text-wrapper-12">{(it.qty || 1)}x</div>
-                                                </div>
-                                            </div>
-                                        </li>
-                                    ))
-                                )}
-                            </ul>
-                            <div className="div-27">
-                                <svg className="i-5" width="13" height="20" viewBox="0 0 13 20" fill="none"><path d="M11 2H2C1.45 2 1 2.45 1 3V17C1 17.55 1.45 18 2 18H11C11.55 18 12 17.55 12 17V3C12 2.45 11.55 2 11 2ZM6.5 15.5C5.95 15.5 5.5 15.05 5.5 14.5C5.5 13.95 5.95 13.5 6.5 13.5C7.05 13.5 7.5 13.95 7.5 14.5C7.5 15.05 7.05 15.5 6.5 15.5Z" fill="#F59E0B" /></svg>
-                                <div className="div-29">
-                                    <div className="text-wrapper-14">Catatan Khusus:</div>
-                                    <p className="p">Tambahkan es batu lebih banyak</p>
-                                </div>
-                            </div>
-                            <div className="div-30">
-                                <div className="div-31">
-                                    <div className="text-wrapper-15">Total Pembayaran</div>
-                                    <div className="text-wrapper-16">{formatRupiah(total)}</div>
-                                </div>
-                                {paymentStatus === 'unpaid' && (
-                                    <div style={{ marginTop: 12, textAlign: 'center' }}>
-                                        <span style={{ background: '#FEF3C7', color: '#D97706', padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 700 }}>BELUM DIBAYAR</span>
-                                    </div>
-                                )}
-                            </div>
+                /* ORDER DETAILS (UPSCALED) */
+                .section-title {
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: var(--text-main);
+                    margin-bottom: 20px;
+                }
+                .item-row {
+                    display: flex;
+                    gap: 16px;
+                    padding: 16px 0;
+                    border-bottom: 1px solid #F3F4F6;
+                }
+                .item-row:last-child { border-bottom: none; }
+                .item-img {
+                    width: 64px;
+                    height: 64px;
+                    border-radius: 12px;
+                    background: #f3f4f6;
+                    object-fit: cover;
+                }
+                .item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+                .item-name { font-size: 16px; font-weight: 600; color: var(--text-main); margin-bottom: 6px; }
+                .item-meta { font-size: 14px; color: var(--text-secondary); display: flex; justify-content: space-between; }
+                
+                /* FOOTER (UPSCALED) */
+                .footer {
+                    background: var(--bg-card);
+                    padding: 24px;
+                    border-top: 1px solid var(--border);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                    position: sticky;
+                    bottom: 0;
+                    box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+                }
+                .footer-row {
+                    display: flex;
+                    gap: 16px;
+                }
+                .btn {
+                    height: 56px;
+                    border-radius: 16px;
+                    font-weight: 700;
+                    font-size: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: transform 0.1s;
+                }
+                .btn:active { transform: scale(0.98); }
+                .btn-primary { background: var(--text-main); color: white; width: 100%; box-shadow: 0 10px 20px rgba(0,0,0,0.15); }
+                .btn-secondary { background: white; border: 1px solid var(--border); color: var(--text-secondary); font-weight: 600; }
+                .btn-danger-ghost { background: transparent; color: #DC2626; font-size: 14px; margin-top: 8px; align-self: center; text-decoration: underline; font-weight: 500; }
+                .btn-danger { background: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
-                            {/* REFUND QR SECTION */}
-                            {(orderStatus === 'cancelled' && paymentStatus === 'paid') && (
-                                <div style={{ margin: '24px 24px 0', padding: '16px', background: '#FEF2F2', borderRadius: 16, border: '1px solid #FECACA', textAlign: 'center' }}>
-                                    {refundStatus === 'Refunded' ? (
-                                        <>
-                                            <div style={{ fontSize: 40 }}>✅</div>
-                                            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#059669', margin: '8px 0' }}>Dana Telah Dikembalikan</h3>
-                                            <p style={{ fontSize: 12, color: '#4B5563' }}>Proses refund berhasil.</p>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#DC2626', marginBottom: 12 }}>Refund Dana</h3>
-                                            <div style={{ background: 'white', padding: 10, borderRadius: 8, display: 'inline-block' }}>
-                                                <QRCode value={transactionCode} size={120} />
-                                            </div>
-                                            <p style={{ fontSize: 12, color: '#7F1D1D', marginTop: 12, fontWeight: 500 }}>
-                                                Tunjukkan QR ini ke Kasir untuk pengembalian dana sebesar <b>{formatRupiah(total)}</b>
-                                            </p>
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </section>
-                    </main>
+                /* MODAL */
+                .modal-overlay {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0,0,0,0.5);
+                    z-index: 100;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 24px;
+                }
+                .modal-content {
+                    background: white;
+                    padding: 32px;
+                    border-radius: 24px;
+                    width: 100%;
+                    max-width: 360px;
+                }
+            `}</style>
 
-                    <footer className="footer">
-                        <div className="div-32">
-                            <button className="button-2" type="button" onClick={() => router.push('/saran')}>
-                                <svg className="i-6" width="14" height="17" viewBox="0 0 14 17" fill="none"><path d="M12 1H2C1.45 1 1 1.45 1 2V12L4 9H12C12.55 9 13 8.55 13 8V2C13 1.45 12.55 1 12 1Z" fill="#374151" /></svg>
-                                <span className="text-wrapper-17">Beri Masukan</span>
-                            </button>
-                            {paymentStatus === 'unpaid' ? (
-                                <div style={{ display: 'flex', gap: 12, width: '100%' }}>
-                                    <button
-                                        className="button-3"
-                                        type="button"
-                                        onClick={() => setShowCancelModal(true)}
-                                        style={{ flex: 1, borderColor: '#DC2626', color: '#DC2626', background: 'white' }}
-                                    >
-                                        <svg className="i-7" width="11" height="17" viewBox="0 0 11 17" fill="none"><path d="M8 3V2C8 1.45 7.55 1 7 1H4C3.45 1 3 1.45 3 2V3H1V4H2V13C2 13.55 2.45 14 3 14H8C8.55 14 9 13.55 9 13V4H10V3H8Z" fill="#DC2626" /></svg>
-                                        <span className="text-wrapper-18" style={{ color: '#DC2626' }}>Batal</span>
-                                    </button>
-                                    <button className="button-3" type="button" style={{ flex: 2, borderColor: '#F59E0B', background: '#FEF3C7' }} onClick={() => {
-                                        const stateParam = encodeURIComponent(JSON.stringify({
-                                            items: orderItems,
-                                            subtotal: total,
-                                            transactionCode: transactionCode
-                                        }));
-                                        router.push(`/Kasir?state=${stateParam}`);
-                                    }}>
-                                        <span style={{ color: '#B45309', fontWeight: '700', fontSize: 14 }}>Bayar Sekarang</span>
-                                    </button>
-                                </div>
-                            ) : (
-                                orderStatus !== 'cancelled' && orderStatus !== 'ready' && (
-                                    <button
-                                        className="button-3"
-                                        type="button"
-                                        disabled={cancellationStatus === 'Requested'}
-                                        style={{
-                                            opacity: cancellationStatus === 'Requested' ? 0.6 : 1,
-                                            background: cancellationStatus === 'Requested' ? '#F3F4F6' : 'transparent',
-                                            borderColor: cancellationStatus === 'Requested' ? '#D1D5DB' : '#D1D5DB'
-                                        }}
-                                        onClick={() => setShowCancelModal(true)}
-                                    >
-                                        <svg className="i-7" width="11" height="17" viewBox="0 0 11 17" fill="none"><path d="M8 3V2C8 1.45 7.55 1 7 1H4C3.45 1 3 1.45 3 2V3H1V4H2V13C2 13.55 2.45 14 3 14H8C8.55 14 9 13.55 9 13V4H10V3H8Z" fill={cancellationStatus === 'Requested' ? '#9CA3AF' : "#DC2626"} /></svg>
-                                        <span className="text-wrapper-18" style={{ color: cancellationStatus === 'Requested' ? '#6B7280' : 'inherit' }}>
-                                            {cancellationStatus === 'Requested' ? "Menunggu Konfirmasi" : "Batalkan Pesanan"}
-                                        </span>
-                                    </button>
-                                )
-                            )}
-                        </div>
-                        <button className="button-4" type="button" onClick={() => router.push('/home')}>
-                            <svg className="i-8" width="14" height="20" viewBox="0 0 14 20" fill="none"><path d="M7 2L2 7H5V12H9V7H12L7 2Z" fill="#111827" /></svg>
-                            <span className="text-wrapper-19">Pesan Menu Lain</span>
-                        </button>
-                    </footer>
-                </div>
+            {/* HEADER */}
+            <div className="header-bar">
+                <button className="back-btn" onClick={() => router.back()}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6" /></svg>
+                </button>
+                <div className="title">Lacak Pesanan</div>
+                <button className="back-btn" onClick={handleWhatsAppClick} style={{ color: '#25D366' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+                </button>
             </div>
 
-            {/* MODAL */}
-            {showCancelModal && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-                    <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 320 }}>
-                        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#111827' }}>Batalkan Pesanan?</h3>
-                        <p style={{ fontSize: 14, color: '#6B7280', marginBottom: 16 }}>
-                            {orderStatus === 'preparing'
-                                ? "Pesanan sedang disiapkan. Permintaan pembatalan perlu persetujuan kasir."
-                                : "Pesanan akan langsung dibatalkan. Berikan alasan pembatalan."}
-                        </p>
-                        <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: '#374151' }}>Alasan:</label>
-                        <textarea
-                            value={cancelReason}
-                            onChange={(e) => setCancelReason(e.target.value)}
-                            placeholder="Contoh: Salah pesan menu..."
-                            style={{ width: '100%', border: '1px solid #D1D5DB', borderRadius: 8, padding: 8, fontSize: 14, minHeight: 80, marginBottom: 20, color: '#111827' }}
-                        />
-                        <div style={{ display: 'flex', gap: 12 }}>
-                            <button onClick={() => setShowCancelModal(false)} style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid #D1D5DB', background: 'white', fontWeight: 600, color: '#374151' }}>Tutup</button>
-                            <button
-                                onClick={handleCancelSubmit}
-                                disabled={isCancelling}
-                                style={{ flex: 1, padding: 12, borderRadius: 12, background: '#DC2626', color: 'white', fontWeight: 600, opacity: isCancelling ? 0.7 : 1 }}
-                            >
-                                {isCancelling ? "..." : "Batalkan"}
-                            </button>
+            <motion.div
+                style={{
+                    flex: 1,
+                    padding: '40px 24px', // Explicit Padding
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '32px' // Explicit Gap
+                }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+            >
+                {/* STATUS CARD */}
+                <div className="card" style={{ marginBottom: 32 }}>
+                    <div className="status-header">
+                        {/* QUEUE NUMBER WITH BIG GRADIENT RING */}
+                        {/* QUEUE NUMBER WITH RGB GRADIENT RING */}
+                        {/* QUEUE NUMBER WITH RGB GRADIENT RING (FIXED VISIBILITY) */}
+                        {/* QUEUE NUMBER WITH RGB GRADIENT RING (FIXED ALIGNMENT) */}
+                        <div style={{ position: 'relative', width: 160, height: 160, margin: '0 auto 24px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+
+                            {/* Animated RGB Gradient Background - Layer 1 (Blur/Glow) */}
+                            <motion.div
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    borderRadius: '50%',
+                                    background: 'conic-gradient(from 0deg, #FF0080, #7928CA, #FF0080)',
+                                    filter: 'blur(20px)',
+                                    opacity: 0.5,
+                                    zIndex: 0,
+                                }}
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                            />
+
+                            {/* Animated RGB Gradient Background - Layer 2 (Sharp Ring) */}
+                            <motion.div
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    borderRadius: '50%',
+                                    background: 'conic-gradient(from 0deg, #FF0080, #7928CA, #FF0080)',
+                                    zIndex: 1,
+                                }}
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                            />
+
+                            {/* Inner White Circle (To create the ring effect) */}
+                            <div style={{
+                                position: 'absolute',
+                                top: 6, // 6px thickness
+                                left: 6,
+                                right: 6,
+                                bottom: 6,
+                                background: 'white',
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                zIndex: 2,
+                                boxShadow: 'inset 0 4px 6px rgba(0,0,0,0.1)'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                                    {orderStatus === 'ready' ? (
+                                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5" style={{ display: 'block' }}><polyline points="20 6 9 17 4 12" /></svg>
+                                    ) : orderStatus === 'cancelled' ? (
+                                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5" style={{ display: 'block' }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                    ) : orderStatus === 'preparing' ? (
+                                        <motion.svg
+                                            width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5" style={{ display: 'block' }}
+                                            animate={{ scale: [1, 1.15, 1] }}
+                                            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                        >
+                                            <path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z" /><line x1="6" y1="17" x2="18" y2="17" />
+                                        </motion.svg>
+                                    ) : (
+                                        <span style={{ fontSize: 72, fontWeight: 800, color: '#111827', letterSpacing: '-2px', lineHeight: 1, display: 'block', marginTop: -4 }}>{queueNumber}</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <h2 className="status-label">
+                            {orderStatus === 'ready' ? "Pesanan Siap!" :
+                                orderStatus === 'preparing' ? "Sedang Disiapkan" :
+                                    orderStatus === 'cancelled' ? "Pesanan Dibatalkan" :
+                                        "Pesanan Diterima"}
+                        </h2>
+
+                        {estimatedTime && orderStatus !== 'cancelled' && orderStatus !== 'ready' && (
+                            <div style={{ marginTop: 12, padding: '8px 20px', background: '#F3F4F6', borderRadius: 99, fontSize: 15, fontWeight: 600, color: '#4B5563', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                {estimatedTime}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* PROGRESS BAR (UPSCALED) */}
+                    {orderStatus !== 'cancelled' && (
+                        <div className="progress-wrapper">
+                            <div className="steps-row">
+                                {/* Step 1 */}
+                                <div className={`step-item ${['received', 'preparing', 'ready'].includes(orderStatus) ? 'active' : ''} ${['preparing', 'ready'].includes(orderStatus) ? 'completed' : ''}`}>
+                                    <div
+                                        className="step-icon"
+                                    >
+                                        <motion.svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                                            animate={orderStatus === 'received' ? { scale: [1, 1.2, 1] } : {}}
+                                            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                        ><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></motion.svg>
+                                    </div>
+                                    <span className="step-label">Diterima</span>
+                                </div>
+                                {/* Step 2 */}
+                                <div className={`step-item ${['preparing', 'ready'].includes(orderStatus) ? 'active' : ''} ${orderStatus === 'ready' ? 'completed' : ''}`}>
+                                    <div
+                                        className="step-icon"
+                                    >
+                                        <motion.svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                                            animate={orderStatus === 'preparing' ? { scale: [1, 1.2, 1] } : {}}
+                                            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                        ><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z" /><line x1="6" y1="17" x2="18" y2="17" /></motion.svg>
+                                    </div>
+                                    <span className="step-label">Disiapkan</span>
+                                </div>
+                                {/* Step 3 */}
+                                <div className={`step-item ${orderStatus === 'ready' ? 'active' : ''} ${orderStatus === 'ready' ? 'completed' : ''}`}>
+                                    <div className="step-icon">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
+                                    </div>
+                                    <span className="step-label">Siap Saji</span>
+                                </div>
+                            </div>
+
+                            <div className="progress-bar-container">
+                                <motion.div
+                                    style={{
+                                        height: '100%',
+                                        background: 'linear-gradient(90deg, #3B82F6, #8B5CF6, #EC4899, #F59E0B, #3B82F6)', // REPEATED FOR FLOW
+                                        backgroundSize: '200% 100%', // DOUBLE SIZE FOR FLOW ANIMATION
+                                        borderRadius: 4,
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        boxShadow: '0 0 12px rgba(139, 92, 246, 0.6)', // GLOW EFFECT
+                                        zIndex: 10
+                                    }}
+                                    initial={{ width: '0%', backgroundPosition: '0% 50%' }}
+                                    animate={{
+                                        width: orderStatus === 'received' ? '15%' :
+                                            orderStatus === 'preparing' ? '50%' : '100%',
+                                        backgroundPosition: ['0% 50%', '100% 50%'] // FLOWING ANIMATION
+                                    }}
+                                    transition={{
+                                        width: { duration: 0.8 },
+                                        backgroundPosition: { duration: 3, repeat: Infinity, ease: "linear" }
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* DETAILS CARD (UPSCALED) */}
+                <div className="card">
+                    <h3 className="section-title">Rincian Order</h3>
+                    <div>
+                        {orderItems.map((item, idx) => (
+                            <div className="item-row" key={idx}>
+                                <img src={item.image || '/assets/placeholder.png'} className="item-img" alt={item.name} />
+                                <div className="item-info">
+                                    <div className="item-name">{item.name}</div>
+                                    <div className="item-meta">
+                                        <span>{item.qty}x</span>
+                                        <span style={{ fontWeight: 600, color: '#111827' }}>{formatRupiah(item.price)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, paddingTop: 24, borderTop: '1px dashed #E5E7EB' }}>
+                        <span style={{ fontSize: 16, color: '#6B7280' }}>Total Pembayaran</span>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{formatRupiah(total)}</div>
+                            {paymentStatus === 'unpaid' && (
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#D97706', background: '#FEF3C7', padding: '4px 10px', borderRadius: 6, display: 'inline-block', marginTop: 4 }}>Belum Dibayar</span>
+                            )}
                         </div>
                     </div>
+
+                    {/* QR REFUND */}
+                    {(orderStatus === 'cancelled' && paymentStatus === 'paid') && (
+                        <div style={{ marginTop: 24, textAlign: 'center', padding: 20, background: '#FEF2F2', borderRadius: 16, border: '1px solid #FEE2E2' }}>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: '#DC2626', marginBottom: 16 }}>Refund Dana</div>
+                            <div style={{ background: 'white', padding: 12, display: 'inline-block', borderRadius: 12 }}>
+                                <QRCode value={transactionCode} size={140} />
+                            </div>
+                            <p style={{ fontSize: 14, color: '#991B1B', marginTop: 12 }}>Tunjukkan ke kasir untuk refund</p>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+
+            {/* FOOTER ACTIONS (UPSCALED) */}
+            <div className="footer">
+                {paymentStatus === 'unpaid' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {/* UNPAID: 4 BUTTONS LAYOUT */}
+                        <div className="footer-row">
+                            <button className="btn btn-secondary" onClick={() => router.push('/saran')} style={{ flex: 1 }}>
+                                <span style={{ marginRight: 8, fontSize: 18 }}>💬</span> Saran
+                            </button>
+                            <button className="btn btn-secondary" style={{ flex: 1, borderColor: '#F59E0B', color: '#B45309' }} onClick={() => router.push('/home')}>
+                                Pesan Lagi +
+                            </button>
+                        </div>
+                        <div className="footer-row">
+                            <button className="btn btn-secondary" onClick={() => setShowCancelModal(true)} style={{ color: '#DC2626', borderColor: '#FECACA', flex: 1 }}>Batal</button>
+                            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => {
+                                const stateParam = encodeURIComponent(JSON.stringify({ items: orderItems, subtotal: total, transactionCode: transactionCode }));
+                                router.push(`/Kasir?state=${stateParam}`);
+                            }}>Bayar Sekarang</button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="footer-row">
+                            <button className="btn btn-secondary" onClick={() => router.push('/saran')} style={{ flex: 1 }}>
+                                <span style={{ marginRight: 8, fontSize: 18 }}>💬</span> Saran
+                            </button>
+                            <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => router.push('/home')}>
+                                Pesan Lagi +
+                            </button>
+                        </div>
+
+                        {orderStatus !== 'cancelled' && orderStatus !== 'ready' && cancellationStatus !== 'RejectedByAdmin' && (
+                            <button
+                                className="btn-danger-ghost"
+                                disabled={cancellationStatus === 'Requested'}
+                                style={{ opacity: cancellationStatus === 'Requested' ? 0.5 : 1 }}
+                                onClick={() => setShowCancelModal(true)}
+                            >
+                                {cancellationStatus === 'Requested' ? "Menunggu Konfirmasi..." : "Ingin membatalkan pesanan?"}
+                            </button>
+                        )}
+                    </>
+                )}
+            </div>
+
+            {/* MODAL (UPSCALED) */}
+            {showCancelModal && (
+                <div className="modal-overlay">
+                    <motion.div
+                        className="modal-content"
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                    >
+                        <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>Batalkan Pesanan?</h3>
+                        <p style={{ fontSize: 15, color: '#6B7280', marginBottom: 20, lineHeight: 1.5 }}>
+                            {orderStatus === 'preparing' ? "Pesanan sedang dimasak, butuh persetujuan kasir." : "Pesanan akan langsung dibatalkan."}
+                        </p>
+                        <textarea
+                            placeholder="Alasan pembatalan..."
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                            style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #E5E7EB', marginBottom: 20, fontSize: 15, fontFamily: 'inherit' }}
+                            rows={3}
+                        />
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCancelModal(false)}>Tidak</button>
+                            <button className="btn btn-danger" style={{ flex: 1 }} onClick={handleCancelSubmit}>
+                                {isCancelling ? "..." : "Ya, Batalkan"}
+                            </button>
+                        </div>
+                    </motion.div>
                 </div>
             )}
-        </>
+        </div>
     );
 }

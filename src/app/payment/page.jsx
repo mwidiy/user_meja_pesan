@@ -2,31 +2,40 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createOrder } from '../../services/api';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function PaymentPage() {
     const router = useRouter();
     const [orderState, setOrderState] = useState({ items: [], subtotal: 0, orderType: 'dinein', location: '', notes: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState('qris');
+    const [showSummary, setShowSummary] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSuccess, setIsSuccess] = useState(false);
 
     useEffect(() => {
+        // Simulate "Network" loading for skeleton effect
+        const timer = setTimeout(() => setIsLoading(false), 800);
+
         try {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
-            if (!raw) return;
-            const parsed = JSON.parse(decodeURIComponent(raw));
-            const items = Array.isArray(parsed.items) ? parsed.items : [];
-            const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
+            if (raw) {
+                const parsed = JSON.parse(decodeURIComponent(raw));
+                const items = Array.isArray(parsed.items) ? parsed.items : [];
+                const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
 
-            // Extract extra fields passed from checkout
-            const orderType = parsed.orderType || 'dinein';
-            const location = parsed.location || '';
-            const notes = parsed.notes || '';
+                // Extract extra fields
+                const orderType = parsed.orderType || 'dinein';
+                const location = parsed.location || '';
+                const notes = parsed.notes || '';
 
-            setOrderState({ items, subtotal, orderType, location, notes });
+                setOrderState({ items, subtotal, orderType, location, notes });
+            }
         } catch (e) {
-            // ignore
+            console.error("State parsing error", e);
         }
+        return () => clearTimeout(timer);
     }, []);
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
@@ -36,40 +45,24 @@ export default function PaymentPage() {
         setIsSubmitting(true);
 
         try {
-            // 1. Ambil data identitas dari localStorage
-            const storedName = localStorage.getItem('customerName'); // Sesuai instruksi: 'customerName'
+            const storedName = localStorage.getItem('customerName');
             const storedTable = localStorage.getItem('customer_table');
-
-            // Validasi & Default Name
             const finalName = (storedName && storedName.trim()) ? storedName : "Pelanggan Tanpa Nama";
-
-            // 2. Siapkan tableId & StoreId
             let finalTableId = null;
-            let finalStoreId = orderState.storeId || null; // Try from state first
+            let finalStoreId = orderState.storeId || null;
 
             if (storedTable) {
                 try {
                     const parsedTable = JSON.parse(storedTable);
-                    if (parsedTable && parsedTable.id) {
-                        const numericId = parseInt(parsedTable.id, 10);
-                        if (!isNaN(numericId)) finalTableId = numericId;
-                    }
-                    // Fallback Store ID if not in state
-                    if (!finalStoreId && parsedTable.location && parsedTable.location.storeId) {
-                        finalStoreId = parsedTable.location.storeId;
-                    }
-                } catch (e) {
-                    console.warn("Failed to parse customer_table", e);
-                }
+                    if (parsedTable?.id) finalTableId = parseInt(parsedTable.id, 10);
+                    if (!finalStoreId && parsedTable?.location?.storeId) finalStoreId = parsedTable.location.storeId;
+                } catch (e) { /* ignore */ }
             }
 
-            // Table ID tetap dikirim apapun orderType-nya (Request User)
-
-            // 3. Construct Body/Payload
             const payload = {
                 customerName: finalName,
                 tableId: finalTableId,
-                storeId: finalStoreId, // <--- Send Store ID
+                storeId: finalStoreId,
                 items: orderState.items.map(item => ({
                     productId: item.id,
                     quantity: item.qty,
@@ -83,28 +76,27 @@ export default function PaymentPage() {
                 deliveryAddress: orderState.orderType === 'delivery' ? orderState.location : null
             };
 
-            // Kirim ke Backend
             const response = await createOrder(payload);
 
-            // Redirect user ke halaman nota/kasir dengan membawa state
-            // IMPORTANT: Merge selectedMethod into state so order/page knows it
-            // ALSO: Pass transactionCode from backend response to enable QR generation
-            const finalState = {
-                ...orderState,
-                method: selectedMethod,
-                transactionCode: response.data.transactionCode // <--- Added this
-            };
-            const stateParam = encodeURIComponent(JSON.stringify(finalState));
-            const orderIdParam = response.data && response.data.id ? `&orderId=${response.data.id}` : '';
+            // Show Success Animation
+            setIsSuccess(true);
 
-            if (selectedMethod === 'qris') {
-                router.push(`/Qris?state=${stateParam}${orderIdParam}`);
-            } else {
-                // Cash -> Order Page (Unpaid) - NEW FLOW
-                // Ensure transactionCode is in stateParam (it was added above)
-                // Override status if needed, but 'unpaid' is default for cash
-                router.push(`/order?state=${stateParam}${orderIdParam}`);
-            }
+            // Delay redirect to let animation play
+            setTimeout(() => {
+                const finalState = {
+                    ...orderState,
+                    method: selectedMethod,
+                    transactionCode: response.data.transactionCode
+                };
+                const stateParam = encodeURIComponent(JSON.stringify(finalState));
+                const orderIdParam = response.data?.id ? `&orderId=${response.data.id}` : '';
+
+                if (selectedMethod === 'qris') {
+                    router.push(`/Qris?state=${stateParam}${orderIdParam}`);
+                } else {
+                    router.push(`/order?state=${stateParam}${orderIdParam}`);
+                }
+            }, 2000); // 2 seconds delay for animation
 
         } catch (error) {
             console.error("Payment submission failed", error);
@@ -114,175 +106,410 @@ export default function PaymentPage() {
     };
 
     const handleBack = () => {
-        // navigate back to checkout with same state if available
         const stateParam = encodeURIComponent(JSON.stringify(orderState));
-        const target = orderState && orderState.items && orderState.items.length
-            ? `/checkout?state=${stateParam}`
-            : '/checkout';
+        const target = orderState.items.length ? `/checkout?state=${stateParam}` : '/checkout';
         router.push(target);
     };
 
-    const subtotal = orderState && orderState.items && orderState.items.length
-        ? orderState.items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0)
-        : orderState.subtotal || 0;
+    // Skeleton Component
+    const SkeletonLine = ({ width = "100%", height = "20px" }) => (
+        <div style={{ width, height, background: 'linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%)', backgroundSize: '200% 100%', borderRadius: '6px', animation: 'shimmer 1.5s infinite' }} />
+    );
+
+    const subtotal = orderState.items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0) || orderState.subtotal || 0;
 
     return (
-        <>
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="payment-container"
+        >
             <style jsx global>{`
-        :root {
-            --bg-page: #F4F5F8;
-            --card-bg: #FFFFFF;
-            --text-main: #111827;
-            --text-sub: #6B7280;
-            --border-soft: #E5E7EB;
-            --yellow: #FACC15;
-            --yellow-soft: #FEF3C7;
-            --red: #EF4444;
-            --blue-qris: #2563EB;
-        }
-        * { box-sizing: border-box; font-family:'Poppins',sans-serif; -webkit-tap-highlight-color: transparent; }
-        body { margin:0; background:var(--bg-page); }
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+                
+                :root {
+                    --bg-page: #F3F4F6;
+                    --card-bg: #FFFFFF;
+                    --text-main: #1F2937;
+                    --text-sec: #6B7280;
+                    --primary: #FACC15;
+                    --primary-dark: #EAB308;
+                    --accent: #3B82F6;
+                    --success: #10B981;
+                    --danger: #EF4444;
+                }
 
-        /* scope to this page to avoid leaking */
-        .payment-page { max-width:414px; margin:0 auto; min-height:100vh; background:var(--bg-page); position:relative; }
-        .payment-page .page { padding:0 0 90px 0; display:flex; flex-direction:column; min-height:100vh; }
+                * { box-sizing: border-box; font-family: 'Poppins', sans-serif; -webkit-tap-highlight-color: transparent; }
+                body { margin: 0; background: var(--bg-page); color: var(--text-main); overflow-x: hidden; }
 
-        .payment-page .header {
-            height:64px; background:#FFFFFF; display:flex; align-items:center; justify-content:center;
-            position:sticky; top:0; z-index:10; box-shadow:0 1px 0 rgba(15,23,42,0.06);
-        }
-        .payment-page .back-btn { position:absolute; left:14px; width:36px; height:36px; border-radius:999px; border:none; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-        .payment-page .header-title { font-size:1.25rem; font-weight:700; color:var(--text-main); }
+                @keyframes shimmer { 
+                    0% { background-position: 200% 0; } 
+                    100% { background-position: -200% 0; } 
+                }
 
-        .payment-page .content { padding:16px 16px 0; flex:1; }
+                .payment-container {
+                    max-width: 480px;
+                    margin: 0 auto;
+                    min-height: 100vh;
+                    background: var(--bg-page);
+                    padding-bottom: 120px;
+                    position: relative;
+                }
 
-        .payment-page .summary-card { background:var(--card-bg); border-radius:24px; padding:18px 18px 16px; box-shadow:0 8px 20px rgba(15,23,42,0.05); margin-bottom:22px; }
-        .payment-page .summary-title { font-size:1.1rem; font-weight:700; color:var(--text-main); margin-bottom:14px; }
-        .payment-page .summary-row { display:flex; justify-content:space-between; align-items:center; margin:4px 0; font-size:0.95rem; color:var(--text-sub); }
-        .payment-page .summary-row.total-label { margin-top:14px; padding-top:10px; border-top:1px solid var(--border-soft); font-weight:700; color:var(--text-main); }
-        .payment-page .summary-row .value { font-weight:600; color:var(--text-sub); }
-        .payment-page .summary-row.total-label .value { color:var(--red); font-size:1.05rem; }
+                /* Glass Header */
+                .header {
+                    padding: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center; /* Center content */
+                    position: sticky;
+                    top: 0;
+                    z-index: 40;
+                    background: rgba(243, 244, 246, 0.8);
+                    backdrop-filter: blur(12px);
+                }
+                .back-btn {
+                    position: absolute;
+                    left: 20px;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(0,0,0,0.05);
+                    background: #FFFFFF;
+                    display: flex; align-items: center; justify-content: center;
+                    cursor: pointer;
+                    box-shadow: 0 4px 24px rgba(0,0,0,0.03); /* Match checkout shadow */
+                    color: var(--text-main);
+                    z-index: 20;
+                }
+                .header-title {
+                    font-size: 1.25rem; font-weight: 700; 
+                    color: var(--text-main);
+                    text-align: center;
+                    margin: 0;
+                }
 
-        .payment-page .section-title { font-weight:700; color:var(--text-main); font-size:1.05rem; margin-bottom:12px; }
+                /* Methods Section */
+                .section-title {
+                    padding: 0 24px; margin: 24px 0 16px;
+                    font-size: 1.1rem; font-weight: 700; color: var(--text-main);
+                }
+                .methods-list { padding: 0 20px; display: flex; flex-direction: column; gap: 16px; }
+                
+                .method-card {
+                    background: var(--card-bg);
+                    border-radius: 24px;
+                    padding: 20px;
+                    display: flex; align-items: center; gap: 16px;
+                    position: relative; overflow: hidden;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.02);
+                    border: 2px solid transparent;
+                    cursor: pointer;
+                }
+                
+                .method-icon-wrap {
+                    width: 60px; height: 60px; border-radius: 18px;
+                    display: flex; align-items: center; justify-content: center;
+                    flex-shrink: 0;
+                    background: #F9FAFB;
+                }
+                .method-icon-wrap img { width: 32px; height: 32px; object-fit: contain; }
+                
+                .label-badge {
+                    display: inline-block; padding: 4px 10px; border-radius: 20px;
+                    background: #FEF9C3; color: #854D0E; font-size: 0.75rem; font-weight: 600;
+                    margin-bottom: 6px;
+                }
 
-        .payment-page .method-list { display:flex; flex-direction:column; gap:14px; }
-        .payment-page .method-card { background:var(--card-bg); border-radius:22px; padding:14px 14px 12px; display:flex; gap:12px; align-items:flex-start; border:1px solid var(--border-soft); cursor:pointer; }
-        .payment-page .method-card.active { border-color: #FCD34D; box-shadow:0 10px 24px rgba(250,204,21,0.25); }
-        .payment-page .method-icon { width:52px; height:52px; border-radius:18px; display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; }
-        .payment-page .method-icon.qris { background:#1D4ED8; }
-        .payment-page .method-icon.cash { background:#FEE2E2; }
-        .payment-page .method-icon img { width:70%; height:70%; object-fit:contain; }
-        .payment-page .method-info { flex:1; }
-        .payment-page .method-name { font-weight:700; font-size:1rem; color:var(--text-main); margin-bottom:2px; }
-        .payment-page .method-desc { font-size:0.88rem; color:var(--text-sub); line-height:1.4; }
-        .payment-page .method-extra { margin-top:10px; display:flex; align-items:center; gap:6px; font-size:0.83rem; color:var(--text-sub); }
-        .payment-page .wallet-logos-img { height:18px; width:auto; object-fit:contain; display:block; }
-        .payment-page .method-radio { width:24px; height:24px; border-radius:999px; border:2px solid var(--border-soft); display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-left:6px; }
-        .payment-page .method-card.active .method-radio { border-color:var(--yellow); }
-        .payment-page .method-radio-dot { width:14px; height:14px; border-radius:999px; background:var(--yellow); opacity:0; }
-        .payment-page .method-card.active .method-radio-dot { opacity:1; }
-        .payment-page .method-time { display:flex; align-items:center; gap:6px; font-size:0.83rem; color:var(--text-sub); margin-top:10px; }
-        .payment-page .time-icon { width:18px; height:18px; flex-shrink:0; }
+                .radio-outer {
+                    width: 24px; height: 24px; border-radius: 50%;
+                    border: 2px solid #E5E7EB;
+                    display: flex; align-items: center; justify-content: center;
+                    transition: border-color 0.2s;
+                }
+                .radio-inner {
+                    width: 12px; height: 12px; border-radius: 50%;
+                    background: var(--primary-dark);
+                }
 
-        .payment-page .bottom-bar {
-            position:fixed; left:50%; transform:translateX(-50%); bottom:0; width:100%; max-width:414px; padding:10px 16px 18px; background:#FFFFFF; box-shadow:0 -6px 18px rgba(15,23,42,0.1); box-sizing:border-box;
-        }
-        .payment-page .bottom-total-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:0.96rem; color:var(--text-sub); }
-        .payment-page .bottom-total-row strong { font-weight:700; color:var(--text-main); }
-        .payment-page .bottom-total-row .value { font-weight:700; font-size:1.05rem; color:var(--red); }
-        .payment-page .primary-btn { width:100%; border:none; border-radius:999px; padding:14px 16px; background:var(--yellow); color:var(--text-main); font-weight:700; font-size:1rem; cursor:pointer; box-shadow:0 14px 26px rgba(250,204,21,0.55); }
-        .payment-page .ssl-row { margin-top:8px; display:flex; align-items:center; justify-content:center; gap:6px; font-size:0.82rem; color:var(--text-sub); }
-        .payment-page .ssl-dot { width:14px; height:14px; border-radius:4px; background:#16A34A; }
+                /* Bottom Action */
+                .bottom-action-container {
+                    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+                    width: 100%; max-width: 480px;
+                    padding: 0 20px 24px;
+                    background: linear-gradient(to top, var(--bg-page) 80%, transparent);
+                    z-index: 50;
+                    pointer-events: none; /* Let clicks pass through gradient area */
+                }
+                .bottom-card {
+                    background: var(--card-bg);
+                    border-radius: 28px;
+                    padding: 20px;
+                    box-shadow: 0 10px 40px -10px rgba(0,0,0,0.15);
+                    pointer-events: auto;
+                    display: flex; flex-direction: column; gap: 16px;
+                }
+                
+                .total-row {
+                    display: flex; justify-content: space-between; align-items: center;
+                    font-size: 1rem; color: var(--text-sec);
+                    cursor: pointer;
+                }
+                .total-price { font-size: 1.25rem; font-weight: 700; color: var(--text-main); }
+                
+                .pay-btn {
+                    width: 100%; padding: 18px;
+                    background: var(--primary);
+                    border: none; border-radius: 20px;
+                    font-size: 1.1rem; font-weight: 700; color: #1F2937;
+                    cursor: pointer;
+                    box-shadow: 0 8px 20px rgba(250, 204, 21, 0.25);
+                    display: flex; align-items: center; justify-content: center; gap: 10px;
+                }
+                .pay-btn:disabled { opacity: 0.7; filter: grayscale(0.5); cursor: not-allowed; }
 
-        @media (max-width: 420px) {
-          .payment-page { padding:0 0 90px 0; }
-        }
-      `}</style>
+                /* Modal Sheet */
+                .modal-overlay {
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+                    z-index: 60; display: flex; align-items: flex-end; justify-content: center;
+                    backdrop-filter: blur(4px);
+                }
+                .modal-sheet {
+                    background: var(--card-bg); width: 100%; max-width: 480px;
+                    border-radius: 32px 32px 0 0; padding: 24px;
+                    position: relative;
+                }
+                .drag-handle {
+                    width: 40px; height: 5px; background: #E5E7EB;
+                    border-radius: 10px; margin: 0 auto 24px;
+                }
+                .receipt-item {
+                    display: flex; justify-content: space-between;
+                    margin-bottom: 12px; font-size: 0.95rem; color: var(--text-sec);
+                }
+                .receipt-divider { border-top: 1px dashed #E5E7EB; margin: 16px 0; }
+                .receipt-total {
+                    display: flex; justify-content: space-between;
+                    font-size: 1.1rem; font-weight: 700; color: var(--text-main);
+                }
 
-            <div className="payment-page">
-                <div className="page">
-                    <header className="header">
-                        <button className="back-btn" onClick={handleBack} aria-label="Kembali">←</button>
-                        <h1 className="header-title">Pilih Metode Pembayaran</h1>
-                    </header>
+            `}</style>
 
-                    <main className="content">
-                        <section className="summary-card">
-                            <div className="summary-title">Ringkasan Pesanan</div>
-                            <div className="summary-row">
-                                <span>Subtotal</span>
-                                <span className="value">{formatRupiah(subtotal)}</span>
-                            </div>
-                            <div className="summary-row total-label">
-                                <span>Total Pembayaran</span>
-                                <span className="value">{formatRupiah(subtotal)}</span>
-                            </div>
-                        </section>
+            <AnimatePresence>
+                {isSuccess && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        className="success-overlay"
+                        style={{
+                            position: 'fixed', inset: 0, background: '#FFFFFF', zIndex: 100,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0 }} animate={{ scale: 1 }}
+                            transition={{ type: 'spring', damping: 15 }}
+                            style={{
+                                width: 80, height: 80, borderRadius: '50%', background: '#10B981',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20
+                            }}
+                        >
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M20 6L9 17l-5-5" />
+                            </svg>
+                        </motion.div>
+                        <motion.h2
+                            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                            style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1F2937' }}
+                        >
+                            Pembayaran Berhasil!
+                        </motion.h2>
+                        <motion.p
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                            style={{ color: '#6B7280', marginTop: 8 }}
+                        >
+                            Dialihkan ke halaman status...
+                        </motion.p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-                        <h2 className="section-title">Metode Pembayaran</h2>
-                        <section className="method-list">
-                            <article
-                                className={`method-card ${selectedMethod === 'qris' ? 'active' : ''}`}
-                                data-method="qris"
-                                onClick={() => setSelectedMethod('qris')}
-                            >
-                                <div className="method-icon qris">
-                                    <img src="/assets/Icon_Qris.svg" alt="QRIS" />
-                                </div>
-                                <div className="method-info">
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                                        <div>
-                                            <div className="method-name">QRIS</div>
-                                            <div className="method-desc">Bayar langsung dari semua aplikasi e-wallet</div>
-                                        </div>
-                                        <div className="method-radio"><div className="method-radio-dot" /></div>
-                                    </div>
-                                    <div className="method-extra">
-                                        <div className="wallet-badges">
-                                            <img src="/assets/Icon_Ewallet.svg" alt="E-Wallet Logos" className="wallet-logos-img" />
-                                        </div>
-                                        <span>+ Dana, GoPay, OVO, LinkAja, dan lainnya</span>
-                                    </div>
-                                </div>
-                            </article>
+            <header className="header">
+                <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    className="back-btn"
+                    onClick={handleBack}
+                >
+                    <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+                </motion.button>
+                <span className="header-title">Pembayaran</span>
+            </header>
 
-                            <article
-                                className={`method-card ${selectedMethod === 'cash' ? 'active' : ''}`}
-                                data-method="cash"
-                                onClick={() => setSelectedMethod('cash')}
-                            >
-                                <div className="method-icon cash">
-                                    <img src="/assets/Icon_Kasir.svg" alt="Bayar di Kasir" />
-                                </div>
-                                <div className="method-info">
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                                        <div>
-                                            <div className="method-name">Bayar di Kasir</div>
-                                            <div className="method-desc">Tunjukkan kode pesanan Anda di kasir</div>
-                                        </div>
-                                        <div className="method-radio"><div className="method-radio-dot" /></div>
-                                    </div>
-                                    <div className="method-time">
-                                        <span className="time-icon"><img src="/assets/Icon_Jam.svg" alt="Waktu" /></span>
-                                        <span>Bayar dalam 15 menit setelah pesanan siap</span>
-                                    </div>
-                                </div>
-                            </article>
-                        </section>
-                    </main>
-                </div>
-
-                <div className="bottom-bar">
-                    <div className="bottom-total-row">
-                        <span><strong>Total Pembayaran</strong></span>
-                        <span className="value">{formatRupiah(subtotal)}</span>
+            {isLoading ? (
+                <div style={{ padding: '20px' }}>
+                    <SkeletonLine width="40%" height="24px" />
+                    <div style={{ margin: '20px 0' }}>
+                        <SkeletonLine height="100px" />
                     </div>
-                    <button className="primary-btn" onClick={handlePay} disabled={isSubmitting}>
-                        {isSubmitting ? 'Memproses...' : 'Lanjutkan Pembayaran'}
-                    </button>
-                    <div className="ssl-row"><span className="ssl-dot" /> <span>Pembayaran dilindungi SSL</span></div>
+                    <div style={{ margin: '20px 0' }}>
+                        <SkeletonLine height="100px" />
+                    </div>
                 </div>
+            ) : (
+                <div className="methods-list">
+                    <div className="section-title">Metode Pembayaran</div>
+
+                    {/* QRIS Card */}
+                    <motion.div
+                        className="method-card"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setSelectedMethod('qris')}
+                        animate={{
+                            borderColor: selectedMethod === 'qris' ? '#FACC15' : 'transparent',
+                            backgroundColor: selectedMethod === 'qris' ? '#FEFCE8' : '#FFFFFF'
+                        }}
+                    >
+                        <div className="method-icon-wrap" style={{ background: '#EFF6FF' }}>
+                            <img src="/assets/Icon_Qris.svg" alt="QRIS" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>QRIS</span>
+                                <span className="label-badge">Recommended</span>
+                            </div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-sec)', marginTop: 4 }}>
+                                Scan & Bayar (GoPay, OVO, Dana)
+                            </div>
+                        </div>
+                        <div className="radio-outer" style={{ borderColor: selectedMethod === 'qris' ? '#EAB308' : '#D1D5DB' }}>
+                            {selectedMethod === 'qris' && <motion.div layoutId="radio" className="radio-inner" />}
+                        </div>
+                    </motion.div>
+
+                    {/* Cash Card */}
+                    <motion.div
+                        className="method-card"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setSelectedMethod('cash')}
+                        animate={{
+                            borderColor: selectedMethod === 'cash' ? '#FACC15' : 'transparent',
+                            backgroundColor: selectedMethod === 'cash' ? '#FEFCE8' : '#FFFFFF'
+                        }}
+                    >
+                        <div className="method-icon-wrap" style={{ background: '#FEF2F2' }}>
+                            <img src="/assets/Icon_Kasir.svg" alt="Tunai" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>Bayar di Kasir</span>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-sec)', marginTop: 4 }}>
+                                Bayar tunai setelah pesanan siap
+                            </div>
+                        </div>
+                        <div className="radio-outer" style={{ borderColor: selectedMethod === 'cash' ? '#EAB308' : '#D1D5DB' }}>
+                            {selectedMethod === 'cash' && <motion.div layoutId="radio" className="radio-inner" />}
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Bottom Floating Action */}
+            <div className="bottom-action-container">
+                <motion.div
+                    initial={{ y: 100 }}
+                    animate={{ y: 0 }}
+                    transition={{ type: 'spring', damping: 20 }}
+                    className="bottom-card"
+                >
+                    <div className="total-row" onClick={() => setShowSummary(true)}>
+                        <span>Total Pembayaran</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className="total-price">{formatRupiah(subtotal)}</span>
+                            <span style={{ fontSize: '0.8rem', transform: 'rotate(-90deg)' }}>›</span>
+                        </div>
+                    </div>
+
+                    <motion.button
+                        className="pay-btn"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handlePay}
+                        disabled={isSubmitting || isLoading}
+                    >
+                        {isSubmitting ? (
+                            <span>Memproses...</span>
+                        ) : (
+                            <>
+                                <span>Bayar Sekarang</span>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M5 12h14M12 5l7 7-7 7" />
+                                </svg>
+                            </>
+                        )}
+                    </motion.button>
+                </motion.div>
             </div>
-        </>
+
+            {/* Receipt Modal */}
+            <AnimatePresence>
+                {showSummary && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="modal-overlay" onClick={() => setShowSummary(false)}
+                        />
+                        <motion.div
+                            className="modal-sheet"
+                            style={{ position: 'fixed', bottom: 0, zIndex: 70, left: '50%', translateX: '-50%' }}
+                            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            drag="y" dragConstraints={{ top: 0 }} dragElastic={0.2}
+                            onDragEnd={(_, info) => { if (info.offset.y > 100) setShowSummary(false); }}
+                        >
+                            <div className="drag-handle" />
+                            <h3 style={{ marginBottom: 20, fontSize: '1.2rem', fontWeight: 700 }}>Rincian Pesanan</h3>
+
+                            <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
+                                {orderState.items.map((item, idx) => (
+                                    <div key={idx} className="receipt-item">
+                                        <span style={{ flex: 1 }}>{item.qty}x {item.name}</span>
+                                        <span style={{ fontWeight: 600 }}>{formatRupiah(item.price * item.qty)}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="receipt-divider" />
+
+                            <div className="receipt-item">
+                                <span>Subtotal</span>
+                                <span>{formatRupiah(subtotal)}</span>
+                            </div>
+                            <div className="receipt-item">
+                                <span>Pajak & Layanan</span>
+                                <span>Rp 0</span>
+                            </div>
+
+                            <div className="receipt-divider" style={{ borderTopStyle: 'solid' }} />
+
+                            <div className="receipt-total">
+                                <span>Total Tagihan</span>
+                                <span style={{ color: 'var(--danger)' }}>{formatRupiah(subtotal)}</span>
+                            </div>
+
+                            <button
+                                onClick={() => setShowSummary(false)}
+                                style={{
+                                    width: '100%', padding: '16px', marginTop: 24, borderRadius: '16px',
+                                    border: '1px solid #E5E7EB', background: '#F9FAFB', fontWeight: 600,
+                                    color: 'var(--text-main)', cursor: 'pointer'
+                                }}
+                            >
+                                Tutup Rincian
+                            </button>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+        </motion.div>
     );
 }

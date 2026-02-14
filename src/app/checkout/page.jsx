@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { productsData } from '../home/productsData';
-import { createOrder } from '../../services/api';
+import { createOrder, getImageUrl, getProducts } from '../../services/api'; // Added getProducts
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -18,34 +17,167 @@ export default function CheckoutPage() {
     const [notesDraft, setNotesDraft] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // load incoming state, and also restore saved location from localStorage if present
+    // --- SMART UPSELL STATE ---
+    const [allProducts, setAllProducts] = useState([]);
+    const [recommendations, setRecommendations] = useState([]);
+    const [upsellTitle, setUpsellTitle] = useState('Teman Makan Enak');
+    const [upsellEmoji, setUpsellEmoji] = useState('🍟');
+
+    // Haptic Feedback Helper
+    const vibrate = (ms = 15) => {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(ms);
+        }
+    };
+
+    // Load state & Fetch Products
     useEffect(() => {
+        // 1. Load Checkout State
         try {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
-            if (!raw) return;
-            const parsed = JSON.parse(decodeURIComponent(raw));
-            const items = Array.isArray(parsed.items) ? parsed.items : [];
-            const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
-            setCheckoutState({ items, subtotal });
-            // initialize orderType & location from incoming state if present
-            if (parsed.orderType) setOrderTypeState(parsed.orderType);
-            if (parsed.location) setLocation(parsed.location);
-        } catch (e) {
-            // ignore parse errors
-        }
-        // hydrate saved location (persistent across sessions)
+            if (raw) {
+                const parsed = JSON.parse(decodeURIComponent(raw));
+                const items = Array.isArray(parsed.items) ? parsed.items : [];
+                const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
+                setCheckoutState({ items, subtotal });
+                if (parsed.orderType) setOrderTypeState(parsed.orderType);
+                if (parsed.location) setLocation(parsed.location);
+            }
+        } catch (e) { }
         try {
             const saved = localStorage.getItem('checkout_location_v1');
             if (saved && !location) setLocation(saved);
         } catch (e) { }
+
+        // 2. Fetch Real Products for Recommendations
+        const fetchRecommendations = async () => {
+            let storeId = null;
+            try {
+                const storedTable = localStorage.getItem('customer_table');
+                if (storedTable) {
+                    const parsed = JSON.parse(storedTable);
+                    if (parsed.location?.storeId) storeId = parsed.location.storeId;
+                }
+            } catch (e) { }
+
+            // Fetch all products
+            try {
+                const rawData = await getProducts(storeId);
+                // Safety check: Ensure it's an array
+                if (Array.isArray(rawData)) {
+                    setAllProducts(rawData);
+                } else if (rawData && Array.isArray(rawData.data)) {
+                    setAllProducts(rawData.data); // Handle { data: [...] } format
+                } else if (rawData && Array.isArray(rawData.products)) {
+                    setAllProducts(rawData.products); // Handle { products: [...] } format
+                } else {
+                    console.warn('[Checkout] Products API returned non-array:', rawData);
+                    setAllProducts([]);
+                }
+            } catch (err) {
+                console.error('[Checkout] Failed to load products for upsell:', err);
+                setAllProducts([]);
+            }
+        };
+
+        fetchRecommendations();
     }, []);
 
-    // helper to recalc subtotal
+    // --- SMART RECOMMENDATION ENGINE (ROBUST VERSION) ---
+    useEffect(() => {
+        // Wait for data & Safety Check
+        if (!allProducts || !Array.isArray(allProducts) || allProducts.length === 0) return;
+
+        // 1. Analyze Cart Category Counts
+        let foodCount = 0;
+        let drinkCount = 0;
+        const cartIds = new Set(checkoutState.items.map(i => i.id));
+
+        checkoutState.items.forEach(item => {
+            const name = (item.name || '').toLowerCase();
+            const cat = (item.category || '').toLowerCase();
+
+            const isFood = cat.includes('makan') || cat.includes('dish') || name.includes('nasi') || name.includes('mie') || name.includes('ayam');
+            const isDrink = cat.includes('minum') || cat.includes('drink') || name.includes('es ') || name.includes('teh') || name.includes('kopi');
+
+            if (isFood) foodCount += item.qty;
+            if (isDrink) drinkCount += item.qty;
+        });
+
+        // 2. Determine Strategy
+        let targetStrategy = 'random'; // default
+        let title = 'Mungkin Kamu Suka';
+        let emoji = '🤩';
+
+        if (foodCount > 0 && drinkCount === 0) {
+            targetStrategy = 'drink';
+            title = 'Seret Bos? Minum Dulu!';
+            emoji = '🥤';
+        } else if (drinkCount > 0 && foodCount === 0) {
+            targetStrategy = 'food';
+            title = 'Laper? Sekalian Makan!';
+            emoji = '🍛';
+        } else if (foodCount > 0 && drinkCount > 0) {
+            targetStrategy = 'snack';
+            title = 'Tambah Cemilan Asik?';
+            emoji = '🍟';
+        }
+
+        // 3. Filter Candidates (Exclude Cart Items & Inactive)
+        // Note: We check 'isActive' loosely (if property missing, assume active for safety, or adjust based on DB schema)
+        let candidates = allProducts.filter(p => !cartIds.has(p.id) && (p.isActive !== false));
+
+        // 4. Apply Strategy Filtering
+        let filtered = [];
+
+        const isMatch = (p, type) => {
+            const name = (p.name || '').toLowerCase();
+            const cat = (p.category || '').toLowerCase();
+            if (type === 'drink') return cat.includes('minum') || cat.includes('drink') || name.includes('es ') || name.includes('teh') || name.includes('kopi') || name.includes('ice');
+            if (type === 'food') return cat.includes('makan') || cat.includes('food') || name.includes('nasi') || name.includes('mie') || name.includes('ayam') || name.includes('soto');
+            if (type === 'snack') return cat.includes('snack') || cat.includes('cemil') || name.includes('kentang') || name.includes('roti') || name.includes('pisang') || name.includes('dimsum');
+            return false;
+        };
+
+        if (targetStrategy !== 'random') {
+            filtered = candidates.filter(p => isMatch(p, targetStrategy));
+        }
+
+        // 5. Ultimate Fallback
+        // If strategy returned nothing (or it was random), use ALL candidates
+        if (filtered.length === 0) {
+            // If we really couldn't find specific matches, just show ANY available candidate
+            filtered = candidates;
+            title = 'Teman Makan Enak'; // Generic Title
+            emoji = '🔥';
+        }
+
+        // 6. Refine & Limit (Smart Selection)
+        const finalRecommendations = filtered
+            .sort((a, b) => {
+                // Priority 1: Has Image
+                const hasImgA = !!(a.image || a.imgFile);
+                const hasImgB = !!(b.image || b.imgFile);
+                if (hasImgA && !hasImgB) return -1;
+                if (!hasImgA && hasImgB) return 1;
+
+                // Priority 2: Randomize within same tier
+                return 0.5 - Math.random();
+            })
+            .slice(0, 5); // Max 5 items
+
+        setRecommendations(finalRecommendations);
+        setUpsellTitle(title);
+        setUpsellEmoji(emoji);
+
+    }, [checkoutState.items, allProducts]);
+
+
     const recalcSubtotal = (items) => items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
 
-    // change qty by index in list
     const changeQty = (index, delta) => {
+        vibrate(10); // Haptic tick
         setCheckoutState(prev => {
             const items = [...prev.items];
             const it = items[index];
@@ -57,104 +189,60 @@ export default function CheckoutPage() {
         });
     };
 
-    // remove item by index
-    const removeItem = (index) => {
+    const addAddon = (item) => {
+        vibrate(20); // Stronger haptic
         setCheckoutState(prev => {
             const items = [...prev.items];
-            if (index >= 0 && index < items.length) items.splice(index, 1);
-            return { items, subtotal: recalcSubtotal(items) };
-        });
-    };
-
-    // add addon by product id (merge if exists)
-    const addAddon = (id) => {
-        const menu = productsData.find(p => p.id === id);
-        if (!menu) return;
-        setCheckoutState(prev => {
-            const items = [...prev.items];
-            const existing = items.find(i => i.id === id);
+            const existing = items.find(i => i.id === item.id);
             if (existing) {
                 existing.qty = (existing.qty || 0) + 1;
             } else {
-                items.push({ id: menu.id, name: menu.name, price: menu.price, qty: 1, imgFile: menu.imgFile });
+                items.push({
+                    id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    qty: 1,
+                    image: item.image || item.imgFile,
+                    category: item.category // Store category for better logic next time
+                });
             }
             return { items, subtotal: recalcSubtotal(items) };
         });
     };
 
-    // order type selection (functional)
-    const orderTypeIcons = { dinein: 'garpu', takeaway: 'bungkus', delivery: 'motor' };
     const setOrderType = (type) => {
-        // set order type but keep location persisted (user may switch back)
+        vibrate(15);
         setOrderTypeState(type);
         setCheckoutState(prev => ({ ...prev, orderType: type }));
-        if (type === 'delivery') {
-            // fokus input setelah DOM render singkat
-            setTimeout(() => locationInputRef.current?.focus(), 80);
-        }
+        if (type === 'delivery') setTimeout(() => locationInputRef.current?.focus(), 80);
     };
 
-    // update location input (visible only for delivery)
-    const onChangeLocation = (e) => {
-        const val = e.target.value;
-        setLocation(val);
-        setCheckoutState(prev => ({ ...prev, location: val }));
-        try { localStorage.setItem('checkout_location_v1', val); } catch (e) { }
-    };
-
-    // open location modal (populate draft)
-    const openLocationModal = () => {
-        setLocationDraft(location || '');
-        setLocationModalOpen(true);
-    };
-    const closeLocationModal = () => setLocationModalOpen(false);
+    // Location & Notes handlers
+    const openLocationModal = () => { setLocationDraft(location || ''); setLocationModalOpen(true); vibrate(); };
     const saveLocationFromModal = () => {
         setLocation(locationDraft);
         setCheckoutState(prev => ({ ...prev, location: locationDraft }));
         try { localStorage.setItem('checkout_location_v1', locationDraft); } catch (e) { }
-        setLocationModalOpen(false);
+        setLocationModalOpen(false); vibrate();
     };
-    const clearLocationFromModal = () => {
-        setLocationDraft('');
-        setLocation('');
-        setCheckoutState(prev => ({ ...prev, location: '' }));
-        try { localStorage.removeItem('checkout_location_v1'); } catch (e) { }
-        setLocationModalOpen(false);
-    };
-
-    // open notes modal with draft
-    const openNotesModal = () => { setNotesDraft(notes || ''); setNotesOpen(true); };
-    const closeNotesModal = () => setNotesOpen(false);
+    const openNotesModal = () => { setNotesDraft(notes || ''); setNotesOpen(true); vibrate(); };
     const saveNotes = () => {
         setNotes(notesDraft);
-        try { localStorage.setItem('checkout_notes_v1', notesDraft); } catch (e) { }
-        setNotesOpen(false);
-    };
-    const clearNotes = () => {
-        setNotes(''); setNotesDraft(''); try { localStorage.removeItem('checkout_notes_v1'); } catch (e) { }
-        setNotesOpen(false);
+        setNotesOpen(false); vibrate();
     };
 
-    // order now -> redirect to payment with state
-    // order now -> redirect to payment with state
-    // order now -> redirect to payment with state
-    // order now -> redirect to payment with state
     const handleOrderNow = () => {
+        vibrate(30);
         if (!checkoutState.items || checkoutState.items.length === 0) {
             alert('Belum ada pesanan.');
             return;
         }
-        // jika delivery, pastikan lokasi terisi
         if (orderType === 'delivery' && (!location || !location.trim())) {
-            alert('Mohon masukkan lokasi antar terlebih dahulu.');
-            setTimeout(() => locationInputRef.current?.focus(), 60);
+            alert('Mohon masukkan lokasi antar.');
+            openLocationModal();
             return;
         }
 
-        // Pass data to payment page via URL state
-        // We defer order creation to payment page so we can include paymentMethod
-
-        // 1. Get StoreID from localStorage
         let storeId = null;
         try {
             const storedTable = localStorage.getItem('customer_table');
@@ -170,629 +258,317 @@ export default function CheckoutPage() {
             items: checkoutState.items,
             subtotal: checkoutState.subtotal,
             orderType: orderType,
-            location: orderType === 'delivery' ? location : null, // send location only if delivery
+            location: orderType === 'delivery' ? location : null,
             notes: notes,
-            storeId: storeId // <--- Pass Store ID
+            storeId: storeId
         };
-        const stateParam = encodeURIComponent(JSON.stringify(stateData));
-        router.push(`/payment?state=${stateParam}`);
+        router.push(`/payment?state=${encodeURIComponent(JSON.stringify(stateData))}`);
     };
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
 
+    // Tax & Total Calculation (Mockup logic)
+    const tax = Math.round(checkoutState.subtotal * 0.1);
+    const finalTotal = checkoutState.subtotal;
+
     return (
         <>
             <style jsx global>{`
-		:root {
-			--primary-yellow: #FACC15;
-			--primary-yellow-soft: #FEF3C7;
-			--text-dark: #111827;
-			--text-gray: #6B7280;
-			--red-price: #EF4444;
-			--card-bg: #FFFFFF;
-			--page-bg: #F3F4F6;
-			--qx-navy: #2C3E50;
-			--qx-yellow: #F7DC6F;
-			--qx-dark-grey: #34495E;
-			--qx-med-grey: #7F8C8D;
-		}
-		/* keep global resets minimal */
-		* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-		body { margin: 0; font-family: 'Poppins', sans-serif; }
+                @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+                
+                :root {
+                    --primary: #FACC15;
+                    --primary-dark: #EAB308;
+                    --primary-soft: #FEFCE8;
+                    --text-main: #111827;
+                    --text-sec: #6B7280;
+                    --bg-page: #FAFAFA;
+                    --card-bg: #FFFFFF;
+                    --accent-red: #EF4444;
+                    --shadow-soft: 0 4px 24px rgba(0,0,0,0.03);
+                    --shadow-float: 0 12px 32px rgba(0,0,0,0.06);
+                }
+                * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+                body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg-page); color: var(--text-main); }
+                
+                .checkout-container { max-width: 480px; margin: 0 auto; min-height: 100vh; padding: 24px; padding-bottom: 140px; }
+                
+                /* --- Header --- */
+                .page-header { display: flex; align-items: center; margin-bottom: 28px; position: sticky; top: 0; z-index: 40; padding: 12px 0; background: rgba(250,250,250,0.8); backdrop-filter: blur(8px); transition: all 0.3s; }
+                .btn-icon { width: 44px; height: 44px; border-radius: 14px; border: 1px solid rgba(0,0,0,0.05); background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-soft); transition: transform 0.1s; color: var(--text-main); }
+                .btn-icon:active { transform: scale(0.92); }
+                .page-title { flex: 1; text-align: center; font-size: 1.15rem; font-weight: 700; margin-right: 44px; letter-spacing: -0.02em; }
 
-		/* ===== Scoped checkout styles (prevent leaking to other pages) ===== */
-		.checkout-root .page { max-width: 414px; margin: 0 auto; padding: 16px 16px 120px; }
-		.checkout-root .header { display:flex; align-items:center; justify-content:center; position:relative; margin-bottom:16px; }
-		.checkout-root .back-btn { position:absolute; left:0; width:40px; height:40px; border-radius:999px; border:none; background:#7c7a7a; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 18px rgba(15,23,42,0.08); cursor:pointer; }
-		.checkout-root .header-title { font-size:1.3rem; font-weight:700; color:var(--text-dark); }
+                /* --- Order Type Segmented Control --- */
+                .segment-control { background: #F3F4F6; padding: 5px; border-radius: 18px; display: grid; grid-template-columns: 1fr 1fr 1fr; position: relative; margin-bottom: 32px; }
+                .segment-btn { border: none; background: transparent; padding: 10px; font-weight: 600; font-size: 0.85rem; color: var(--text-sec); cursor: pointer; position: relative; z-index: 2; transition: color 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px; border-radius: 14px; }
+                .segment-btn.active { color: var(--text-main); }
+                .segment-indicator { position: absolute; top: 5px; bottom: 5px; background: white; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); z-index: 1; width: calc(33.33% - 6.66px); }
+                /* Indicator Positions */
+                .pos-0 { left: 5px; } 
+                .pos-1 { left: calc(33.33% + 1.66px); } 
+                .pos-2 { left: calc(66.66% - 1.66px); }
 
-		.checkout-root .order-card { background:var(--card-bg); border-radius:24px; padding:14px 16px; display:flex; gap:14px; align-items:center; box-shadow:0 10px 25px rgba(15,23,42,0.06); margin-bottom:12px; }
-		.checkout-root .order-thumb { width:70px; height:70px; border-radius:16px; overflow:hidden; background:#E5E7EB; flex-shrink:0; }
-		.checkout-root .order-thumb img { width:100%; height:100%; object-fit:cover; }
-		.checkout-root .order-main { flex:1; display:flex; flex-direction:column; justify-content:center; }
-		.checkout-root .order-name { font-weight:600; font-size:1rem; margin-bottom:4px; color:var(--text-dark); }
-		.checkout-root .order-price { font-weight:700; font-size:0.95rem; color:var(--red-price); }
-		.checkout-root .order-actions { display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
-		.checkout-root .qty-inline { display:flex; align-items:center; gap:8px; font-weight:600; color:var(--text-dark); }
-		.checkout-root .qty-inline button { border:none; background:transparent; font-size:1.4rem; cursor:pointer; color:var(--text-dark); }
-		.checkout-root .trash-btn { border:none; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0 4px 0 0; }
-		.checkout-root .trash-icon { width:22px; height:22px; }
+                /* --- Receipt Card --- */
+                .receipt-card { 
+                    background: white; border-radius: 24px; padding: 20px; box-shadow: var(--shadow-soft); 
+                    position: relative; overflow: hidden; margin-bottom: 32px;
+                }
+                .receipt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px dashed #F3F4F6; padding-bottom: 16px; }
+                .receipt-brand { font-weight: 800; font-size: 1rem; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+                .receipt-date { font-size: 0.8rem; color: var(--text-sec); }
 
-		.checkout-root .section-title { margin:18px 4px 10px; font-weight:700; color:var(--text-dark); display:flex; align-items:center; gap:8px; font-size:1.05rem; }
-		.checkout-root .section-title span.icon { display:inline-flex; align-items:center; justify-content:center; }
-		.checkout-root .section-title svg.icon-cutlery { width:22px; height:22px; fill:#FACC15; }
+                /* List Item */
+                .menu-item { display: flex; gap: 14px; margin-bottom: 16px; align-items: center; animation: slideIn 0.3s ease forwards; }
+                @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                .menu-thumb { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; background: #eee; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+                .menu-details { flex: 1; }
+                .menu-name { font-weight: 700; font-size: 0.95rem; line-height: 1.25; margin-bottom: 4px; }
+                .menu-price { font-weight: 600; font-size: 0.9rem; color: var(--text-sec); }
+                
+                /* Qty Control Modern */
+                .qty-control { display: flex; align-items: center; background: #F9FAFB; border-radius: 12px; padding: 2px; border: 1px solid #E5E7EB; }
+                .qty-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: white; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; color: var(--text-main); font-weight: 700; transition: transform 0.1s; }
+                .qty-btn:active { transform: scale(0.9); background: #eee; }
+                .qty-display { width: 24px; text-align: center; font-size: 0.9rem; font-weight: 700; }
 
-		.checkout-root .addon-list { display:flex; gap:12px; overflow-x:auto; padding:4px 2px 6px; }
-		.checkout-root .addon-card { min-width:150px; background:#fff; border-radius:18px; box-shadow:0 8px 20px rgba(15,23,42,0.06); padding:10px; display:flex; flex-direction:column; }
-		.checkout-root .addon-thumb { width:100%; height:80px; border-radius:14px; overflow:hidden; background:#E5E7EB; margin-bottom:8px; }
-		.checkout-root .addon-thumb img { width:100%; height:100%; object-fit:cover; }
-		.checkout-root .addon-name { font-weight:600; font-size:0.9rem; color:var(--text-dark); margin-bottom:2px; }
-		.checkout-root .addon-price { font-weight:700; font-size:0.9rem; color:var(--red-price); margin-bottom:6px; }
-		.checkout-root .addon-footer { display:flex; align-items:center; justify-content:space-between; }
-		.checkout-root .addon-label { font-size:0.8rem; color:var(--text-gray); }
-		.checkout-root .addon-add-btn { align-self:flex-end; width:30px; height:30px; border-radius:999px; border:none; background:var(--primary-yellow); display:flex; align-items:center; justify-content:center; font-size:1.3rem; cursor:pointer; box-shadow:0 8px 16px rgba(250,204,21,0.5); }
+                /* Receipt Summary */
+                .bill-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; color: var(--text-sec); }
+                .bill-total { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 16px; border-top: 2px dashed #F3F4F6; }
+                .total-label { font-weight: 800; font-size: 1.1rem; }
+                .total-value { font-weight: 800; font-size: 1.2rem; color: var(--text-main); letter-spacing: -0.03em; }
 
-		.checkout-root .notes-card {
-  background: #ffffff;
-  border-radius: 14px;
-  padding: 12px 14px;
-  margin: 16px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  border: 1.5px solid rgba(44,62,80,0.12); /* subtle dark navy border */
-  box-shadow: 0 10px 24px rgba(44,62,80,0.06); /* soft navy shadow */
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-.checkout-root .notes-card:active { transform: translateY(1px); }
-.checkout-root .notes-card:hover { box-shadow: 0 14px 32px rgba(44,62,80,0.08); }
+                /* --- Upselling (Impulse Buy) --- */
+                .upsell-section { margin-bottom: 32px; }
+                .section-title { font-weight: 800; font-size: 1.1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+                .upsell-scroll { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 16px; scroll-snap-type: x mandatory; -ms-overflow-style: none; scrollbar-width: none; }
+                .upsell-scroll::-webkit-scrollbar { display: none; }
+                .upsell-card { min-width: 140px; scroll-snap-align: start; background: white; border-radius: 20px; padding: 10px; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; gap: 8px; border: 1px solid rgba(0,0,0,0.02); transition: transform 0.2s; }
+                .upsell-card:active { transform: scale(0.98); }
+                .upsell-img { width: 100%; height: 100px; border-radius: 16px; object-fit: cover; background: #f0f0f0; }
+                .upsell-name { font-weight: 700; font-size: 0.9rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .upsell-price { font-size: 0.85rem; color: var(--text-sec); font-weight: 600; }
+                .btnAdd { width: 100%; background: var(--primary-soft); color: #B45309; font-weight: 700; border: none; padding: 8px; border-radius: 12px; cursor: pointer; font-size: 0.85rem; transition: background 0.2s; }
+                .btnAdd:active { background: var(--primary); color: black; }
 
-		/* Icon circle */
-		.checkout-root .notes-card .notes-icon {
-  width: 46px;
-  height: 46px;
-  background: var(--qx-yellow);
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6px 14px rgba(247,220,111,0.18);
-  flex-shrink: 0;
-}
+                /* --- Notes & Location --- */
+                .action-row { display: flex; gap: 12px; margin-bottom: 24px; overflow-x: auto; padding-right: 4px; }
+                .action-chip { 
+                    flex: 1; min-width: 140px; background: white; border: 1px solid #E5E7EB; border-radius: 16px; 
+                    padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; 
+                    transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+                }
+                .action-chip:active { transform: scale(0.98); background: #F9FAFB; }
+                .chip-icon { color: #F59E0B; }
+                .chip-text { display: flex; flex-direction: column; }
+                .chip-label { font-size: 0.75rem; color: var(--text-sec); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+                .chip-val { font-size: 0.9rem; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
 
-/* Title + placeholder area */
-.checkout-root .notes-card .notes-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.checkout-root .notes-card .notes-title {
-  color: var(--qx-navy);
-  font-weight: 700;
-  font-size: 0.97rem;
-  line-height: 1;
-}
-.checkout-root .notes-card .notes-placeholder {
-  color: var(--qx-med-grey);
-  font-size: 0.9rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+                /* --- Bottom Float Bar --- */
+                .float-bar { 
+                    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: calc(100% - 40px); max-width: 440px;
+                    background: #111827; border-radius: 24px; padding: 8px 8px 8px 24px; display: flex; align-items: center; justify-content: space-between;
+                    box-shadow: 0 12px 40px rgba(17, 24, 39, 0.4); z-index: 100; animation: slideUpBar 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+                }
+                @keyframes slideUpBar { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
+                .bar-info { display: flex; flex-direction: column; }
+                .bar-label { font-size: 0.75rem; color: rgba(255,255,255,0.6); font-weight: 600; }
+                .bar-total { font-size: 1.1rem; color: white; font-weight: 800; }
+                .bar-btn { 
+                    background: var(--primary); color: #111827; border: none; padding: 14px 24px; 
+                    border-radius: 18px; font-weight: 800; font-size: 1rem; cursor: pointer; 
+                    box-shadow: 0 4px 12px rgba(250, 204, 21, 0.3); transition: transform 0.2s;
+                    display: flex; align-items: center; gap: 8px;
+                }
+                .bar-btn:active { transform: scale(0.95); }
 
-/* small tag on right */
-.checkout-root .notes-card .notes-action {
-  margin-left: auto;
-  color: var(--qx-dark-grey);
-  font-weight: 600;
-  font-size: 0.82rem;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(44,62,80,0.04);
-}
+                /* Empty State */
+                .empty-block { text-align: center; padding: 60px 20px; opacity: 0.6; }
+                .empty-icon { font-size: 4rem; margin-bottom: 16px; display: block; animation: bounce 2s infinite; }
+                @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 
-/* Notes modal (updated look) */
-.notes-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15,23,42,0.45);
-  display: none;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 60;
-}
-.notes-modal-backdrop.show { display:flex; }
+                /* Modals common */
+                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
+                .modal-content { background: white; width: 100%; max-width: 480px; border-radius: 32px 32px 0 0; padding: 32px 24px; animation: slideUpModal 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+                @keyframes slideUpModal { from { transform: translateY(100%); } to { transform: translateY(0); } }
+                .modal-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 16px; }
+                .modal-input { width: 100%; padding: 16px; border-radius: 16px; border: 2px solid #F3F4F6; font-family: inherit; font-size: 1rem; outline: none; transition: border 0.2s; background: #F9FAFB; }
+                .modal-input:focus { border-color: var(--primary); background: white; }
+                .modal-btn { width: 100%; padding: 16px; margin-top: 20px; background: var(--text-main); color: white; border: none; border-radius: 16px; font-weight: 700; font-size: 1rem; cursor: pointer; }
+            `}</style>
 
-.notes-modal {
-  width: 100%;
-  max-width: 414px;
-  background: #fff;
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
-  padding: 14px 16px;
-  box-shadow: 0 -18px 40px rgba(44,62,80,0.16);
-}
+            <div className="checkout-container">
+                {/* 1. Header with Glass effect */}
+                <header className="page-header">
+                    <button className="btn-icon" onClick={() => router.back()}>
+                        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+                    </button>
+                    <div className="page-title">Pembayaran</div>
+                    <div style={{ width: 44 }}></div>
+                </header>
 
-/* header */
-.notes-modal-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:8px; border-bottom:1px solid #f3f4f6; }
-.notes-modal-title { color: var(--qx-navy); font-weight: 800; font-size: 1rem; }
-.notes-modal-close { border:none; background:transparent; font-size:20px; color:var(--qx-dark-grey); cursor:pointer; }
+                {/* 2. Segmented Order Type */}
+                <div className="segment-control">
+                    <div className={`segment-indicator pos-${orderType === 'dinein' ? '0' : orderType === 'takeaway' ? '1' : '2'}`}></div>
+                    <button className={`segment-btn ${orderType === 'dinein' ? 'active' : ''}`} onClick={() => setOrderType('dinein')}>
+                        <span>🍽️</span> Makan Sini
+                    </button>
+                    <button className={`segment-btn ${orderType === 'takeaway' ? 'active' : ''}`} onClick={() => setOrderType('takeaway')}>
+                        <span>🥡</span> Bungkus
+                    </button>
+                    <button className={`segment-btn ${orderType === 'delivery' ? 'active' : ''}`} onClick={() => setOrderType('delivery')}>
+                        <span>🛵</span> Antar
+                    </button>
+                </div>
 
-/* textarea */
-.notes-textarea {
-  width:100%;
-  min-height:120px;
-  border-radius:12px;
-  border:1px solid #E6E9EE;
-  padding:12px;
-  font-size:0.96rem;
-  color:var(--qx-navy);
-  resize: vertical;
-  margin-top:10px;
-}
-
-/* footer */
-.notes-modal-footer { margin-top:12px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
-.notes-btn-clear { background: transparent; border: 1px solid #E6E9EE; color: var(--qx-dark-grey); padding:8px 12px; border-radius:10px; cursor:pointer; }
-.notes-btn-save { background: var(--qx-navy); color: var(--qx-yellow); padding:10px 14px; border-radius:10px; border:none; font-weight:700; cursor:pointer; box-shadow: 0 10px 22px rgba(44,62,80,0.12); }
-
-/* truncated preview */
-.notes-preview.truncated { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-		.checkout-root .order-type-wrapper { width:100%; display:flex; justify-content:center; margin:12px 0; }
-		.checkout-root .order-type { width:375px; height:170px; position:relative; background:transparent; }
-		.checkout-root .order-type__title { position:absolute; left:20px; top:0px; color:#1F2937; font-size:18px; font-weight:700; line-height:28px; display:flex; align-items:center; gap:8px; }
-		.checkout-root .order-type__options {
-		  position:absolute;
-		  left:20px;
-		  top:32px;
-		  width:335px;
-		  height:116px;
-		  background:transparent;
-		}
-
-		/* sedikit lebih besar untuk proporsi icon dan area sentuh */
-		.checkout-root .order-type__option {
-		  position: absolute;
-		  width: 108px; /* naik sedikit dari 103.66 untuk ruang klik */
-		  height: 122px;
-		  border-radius: 12px;
-		  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-		  background: var(--card-bg, #fff);
-		  display: flex;
-		  flex-direction: column;
-		  align-items: center;
-		  justify-content: flex-start;
-		  cursor: pointer;
-		  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, outline 0.12s ease;
-		  -webkit-tap-highlight-color: transparent;
-		  outline: none;
-		}
-
-		.checkout-root .order-type__option:hover {
-		  transform: translateY(-4px);
-		  box-shadow: 0 10px 24px rgba(15,23,42,0.10);
-		}
-
-		/* gaya aktif identik dengan chekout.html */
-		.checkout-root .order-type__option--active,
-		.order-type__option[aria-pressed="true"] {
-		  background: #FEFCE8;
-		  outline: 2px solid #F0C419;
-		  outline-offset: -2px;
-		  box-shadow: 0 12px 26px rgba(15,23,42,0.08);
-		  transform: translateY(-2px);
-		}
-
-		/* keyboard focus yang jelas */
-		.checkout-root .order-type__option:focus-visible {
-		  box-shadow: 0 12px 26px rgba(15,23,42,0.10);
-		  outline: 2px solid #F0C419;
-		  outline-offset: -2px;
-		}
-
-		/* ukuran icon diperbesar sedikit agar proporsional dengan kartu */
-		.checkout-root .order-type__icon {
-		  width: 40px;
-		  height: 40px;
-		  margin-top: 16px;
-		  object-fit: contain;
-		  display: block;
-		}
-
-		.checkout-root .order-type__label {
-		  margin-top: 12px;
-		  text-align: center;
-		  color: #1F2937;
-		  font-size: 14px;
-		  font-weight: 600;
-		  line-height: 20px;
-		  white-space: pre-line;
-		}
-
-		/* posisi opsi sedikit disesuaikan agar rapi */
-		.checkout-root .order-type__option--first { left: 0px; top: 0px; }
-		.checkout-root .order-type__option--second { left: 116px; top: 0px; }
-		.checkout-root .order-type__option--third { left: 232px; top: 0px; }
-
-		@media (max-width:400px) {
-		  .checkout-root .order-type { transform: scale(0.98); transform-origin: top center; }
-		  .checkout-root .order-type__option { width: 100px; height: 112px; }
-		  .checkout-root .order-type__icon { width: 36px; height: 36px; }
-		}
-
-		/* NEW: lokasi input tampil di bawah card tipe pesanan (flow dokument, animasi & spacing) */
-		.checkout-root .order-type-location-below {
-		  padding: 6px 16px;
-		  margin-top: 6px; /* dipendekkan agar proporsional seperti chekout.html */
-		   display: flex;
-		   justify-content: center;
-		   transition: all 180ms ease;
-		 }
-		 .checkout-root .order-type-location-below .order-type__location-card {
-		   width: 100%;
-		   max-width: 335px;
-		   min-height: 46px;
-		   background: var(--card-bg, #fff);
-		   box-shadow: 0 6px 18px rgba(15,23,42,0.06);
-		   border-radius: 12px;
-		   outline: 1px #E5E7EB solid;
-		   outline-offset: -1px;
-		   display: flex;
-		   align-items: center;
-		   padding: 8px 12px; /* slightly reduced padding */
-		   color: #374151;
-		   transform-origin: top;
-		   transition: transform 180ms ease, opacity 180ms ease, max-height 180ms ease;
-		   opacity: 0;
-		   transform: translateY(-6px);
-		   max-height: 0;
-		   overflow: hidden;
-		 }
-		 .checkout-root .order-type-location-below.show .order-type__location-card {
-		   opacity: 1;
-		   transform: translateY(0);
-		   max-height: 90px; /* reduced to keep compact */
-		 }
-		 .checkout-root .order-type-location-below .location-input {
-		   width: 100%;
-		   border: none;
-		   outline: none;
-		   background: transparent;
-		   font-size: 14px;
-		   color: #374151;
-		 }
-
-		/* small edit button for location row */
-		.checkout-root .order-type-location-below .edit-btn {
-			margin-left: 8px;
-			background: transparent;
-			border: none;
-			width: 36px;
-			height: 36px;
-			border-radius: 8px;
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			cursor: pointer;
-			color: #374151;
-			box-shadow: 0 6px 14px rgba(15,23,42,0.06);
-		}
-		.checkout-root .order-type-location-below .edit-btn:hover { transform: translateY(-2px); }
-
-		/* Modal lokasi (bottom sheet) styling */
-		.location-modal-backdrop {
-			position: fixed;
-			inset: 0;
-			background: rgba(15,23,42,0.45);
-			display: none;
-			align-items: flex-end;
-			justify-content: center;
-			z-index: 40;
-		}
-		.location-modal-backdrop.show { display: flex; }
-		.location-modal {
-			width: 100%;
-			max-width: 414px;
-			background: #FFFFFF;
-			border-top-left-radius: 24px;
-			border-top-right-radius: 24px;
-			padding: 16px 18px 18px;
-			box-shadow: 0 -12px 30px rgba(15,23,42,0.35);
-		}
-		.location-input-big {
-			width: 100%;
-			border-radius: 12px;
-			border: 1px solid #E5E7EB;
-			padding: 10px 12px;
-			font-size: 0.95rem;
-			outline: none;
-		}
-
-		/* --- Restored summary / bottom-fixed styles (scoped to checkout-root) --- */
-		.checkout-root .summary-card {
-			background:#fff;
-			border-radius:24px;
-			padding:14px 16px;
-			box-shadow:0 12px 26px rgba(15,23,42,0.08);
-			margin-bottom:0;
-		}
-		.checkout-root .summary-title {
-			font-weight:700;
-			font-size:1rem;
-			color:var(--text-dark);
-			margin-bottom:8px;
-		}
-		.checkout-root .summary-row {
-			display:flex;
-			justify-content:space-between;
-			align-items:center;
-			margin:2px 0;
-			font-size:0.95rem;
-			color:var(--text-gray);
-		}
-		.checkout-root .summary-row.total {
-			margin-top:8px;
-			font-weight:700;
-			font-size:1.02rem;
-			color:var(--text-dark);
-		}
-		.checkout-root .summary-row.total .value {
-			color:var(--red-price);
-		}
-
-		.checkout-root .bottom-fixed {
-			position:fixed;
-			left:50%;
-			transform:translateX(-50%);
-			bottom:0;
-			width:100%;
-			max-width:414px;
-			padding:10px 16px 18px;
-			background:linear-gradient(to top, rgba(243,244,246,1), rgba(243,244,246,0.9), rgba(243,244,246,0));
-			box-sizing:border-box;
-			z-index:20;
-		}
-		.checkout-root .bottom-fixed-inner { display:flex; flex-direction:column; gap:10px; }
-		.checkout-root .primary-btn {
-			width:100%;
-			border:none;
-			border-radius:999px;
-			padding:14px 16px;
-			background:var(--primary-yellow);
-			color:var(--text-dark);
-			font-weight:700;
-			font-size:1rem;
-			cursor:pointer;
-			box-shadow:0 14px 26px rgba(250,204,21,0.55);
-		}
-
-		/* ...existing CSS continues... */
- 			`}</style>
-
-            <div className="checkout-root">
-                <div className="page">
-                    <header className="header">
-                        <button className="back-btn" onClick={() => router.back()}>
-                            <img src="/assets/Back.svg" alt="back" />
-                        </button>
-                        <h1 className="header-title">Pesanan Anda</h1>
-                    </header>
-
-                    <div id="orderList">
-                        {checkoutState.items && checkoutState.items.length ? (
-                            checkoutState.items.map((item, idx) => (
-                                <div className="order-card" key={idx}>
-                                    <div className="order-thumb">
-                                        <img src={item.imgFile ? `/assets/${item.imgFile}` : 'https://placehold.co/200x200?text=Menu'} alt={item.name} />
-                                    </div>
-                                    <div className="order-main">
-                                        <div className="order-name">{item.name}</div>
-                                        <div className="order-price">{formatRupiah(item.price)}</div>
-                                    </div>
-                                    <div className="order-actions">
-                                        <div className="qty-inline">
-                                            <button className="trash-btn" aria-label="Hapus" onClick={() => removeItem(idx)}>
-                                                <svg className="trash-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#E5E7EB" /><path d="M9 9l6 6M15 9l-6 6" stroke="#9CA3AF" strokeWidth="1.6" strokeLinecap="round" /></svg>
-                                            </button>
-                                            <button onClick={() => changeQty(idx, -1)}>−</button>
-                                            <span>{item.qty}</span>
-                                            <button onClick={() => changeQty(idx, 1)}>+</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF' }}>Belum ada pesanan.</div>
-                        )}
-                    </div>
-
-                    {/* order type (replaced with HTML-like structure + React logic for location) */}
-                    <div className="order-type-wrapper" aria-hidden="false">
-                        <div className="order-type" role="region" aria-label="Tipe Pesanan">
-                            <div className="order-type__title">
-                                <img src="/assets/Card_Icon.svg" alt="" className="order-type__title-icon" />
-                                <span>Tipe Pesanan</span>
-                            </div>
-
-                            <div className="order-type__options" role="tablist" aria-label="Opsi Tipe Pesanan">
-                                {/* Dine In */}
-                                <div
-                                    className={`order-type__option order-type__option--first ${orderType === 'dinein' ? 'order-type__option--active' : ''}`}
-                                    data-type="dinein"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-pressed={orderType === 'dinein'}
-                                    onClick={() => setOrderType('dinein')}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOrderType('dinein'); } }}
-                                >
-                                    <img src={`/assets/garpu${orderType === 'dinein' ? '_k' : ''}.svg`} alt="Makan Sini" className="order-type__icon" />
-                                    <div className="order-type__label">Makan<br />Sini</div>
-                                </div>
-
-                                {/* Takeaway */}
-                                <div
-                                    className={`order-type__option order-type__option--second ${orderType === 'takeaway' ? 'order-type__option--active' : ''}`}
-                                    data-type="takeaway"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-pressed={orderType === 'takeaway'}
-                                    onClick={() => setOrderType('takeaway')}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOrderType('takeaway'); } }}
-                                >
-                                    <img src={`/assets/bungkus${orderType === 'takeaway' ? '_k' : ''}.svg`} alt="Bungkus" className="order-type__icon" />
-                                    <div className="order-type__label">Bungkus</div>
-                                </div>
-
-                                {/* Delivery */}
-                                <div
-                                    className={`order-type__option order-type__option--third ${orderType === 'delivery' ? 'order-type__option--active' : ''}`}
-                                    data-type="delivery"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-pressed={orderType === 'delivery'}
-                                    onClick={() => setOrderType('delivery')}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOrderType('delivery'); } }}
-                                >
-                                    <img src={`/assets/motor${orderType === 'delivery' ? '_k' : ''}.svg`} alt="Antar" className="order-type__icon" />
-                                    <div className="order-type__label">Antar</div>
-                                </div>
-                            </div>
+                {/* 3. Receipt Card (The Bill) */}
+                <div className="receipt-card">
+                    <div className="receipt-header">
+                        <div className="receipt-brand">
+                            <span style={{ fontSize: '1.2rem' }}>🧾</span> Dapur QuackXel
                         </div>
+                        <div className="receipt-date">{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</div>
                     </div>
 
-                    {/* render input below ONLY when delivery selected — this ensures elements below shift up when input is absent */}
-                    {orderType === 'delivery' && (
-                        <div className={`order-type-location-below show`}>
-                            <div className="order-type__location-card" role="group" aria-label="Lokasi Antar" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <textarea
-                                    ref={locationInputRef}
-                                    className="location-input"
-                                    rows={2}
-                                    placeholder="Masukkan alamat pengiriman lengkap (Jalan, No rumah, Gedung, dll)"
-                                    value={location}
-                                    onChange={onChangeLocation}
-                                    aria-label="Alamat Pengiriman"
-                                    style={{ resize: 'none', height: 'auto', minHeight: '46px', paddingTop: 10, fontFamily: 'inherit' }}
+                    {checkoutState.items.length > 0 ? (
+                        checkoutState.items.map((item, idx) => (
+                            <div className="menu-item" key={idx}>
+                                <img
+                                    src={getImageUrl(item.image || item.imgFile)}
+                                    className="menu-thumb"
+                                    alt={item.name}
+                                    onError={(e) => { e.currentTarget.src = '/assets/logo.png'; }}
                                 />
-                                {/* edit button opens bottom modal for more comfortable editing/saving */}
-                                <button className="edit-btn" aria-label="Edit alamat" onClick={openLocationModal} title="Edit alamat">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-                                </button>
+                                <div className="menu-details">
+                                    <div className="menu-name">{item.name}</div>
+                                    <div className="menu-price">{formatRupiah(item.price)}</div>
+                                </div>
+                                <div className="qty-control">
+                                    <button className="qty-btn" onClick={() => changeQty(idx, -1)}>−</button>
+                                    <div className="qty-display">{item.qty}</div>
+                                    <button className="qty-btn" onClick={() => changeQty(idx, 1)}>+</button>
+                                </div>
                             </div>
+                        ))
+                    ) : (
+                        <div className="empty-block">
+                            <span className="empty-icon">🍽️</span>
+                            <div style={{ fontWeight: 600 }}>Belum ada pesanan</div>
                         </div>
                     )}
 
-                    {/* LOCATION Modal (bottom sheet) */}
-                    <div className={`location-modal-backdrop ${locationModalOpen ? 'show' : ''}`} onClick={() => setLocationModalOpen(false)}>
-                        <div className="location-modal" onClick={(e) => e.stopPropagation()}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                <strong style={{ fontSize: 16 }}>Lokasi Antar</strong>
-                                <button onClick={() => setLocationModalOpen(false)} style={{ border: 'none', background: 'transparent', fontSize: 20 }}>×</button>
+                    {/* Bill Summary */}
+                    {checkoutState.items.length > 0 && (
+                        <div style={{ marginTop: 24 }}>
+                            <div className="bill-row">
+                                <span>Subtotal</span>
+                                <span>{formatRupiah(checkoutState.subtotal)}</span>
                             </div>
-                            <p style={{ margin: '6px 0 12px', color: '#6B7280' }}>Masukkan detail lokasi antar agar pesanan sampai tepat.</p>
-                            <textarea className="location-input-big" rows={3} value={locationDraft} onChange={(e) => setLocationDraft(e.target.value)} placeholder="Contoh: Gedung A, Lantai 2, Ruang 205" style={{ resize: 'vertical', fontFamily: 'inherit' }} />
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-                                <button className="notes-btn-secondary" onClick={() => { setLocationDraft(''); clearLocationFromModal(); }}>Hapus</button>
-                                <button className="notes-btn-primary" onClick={saveLocationFromModal}>Simpan</button>
+                            <div className="bill-row">
+                                <span>Pajak & Layanan</span>
+                                <span>Termasuk</span>
+                            </div>
+                            <div className="bill-total">
+                                <span className="total-label">Total</span>
+                                <span className="total-value">{formatRupiah(finalTotal)}</span>
                             </div>
                         </div>
-                    </div>
+                    )}
+                </div>
 
-                    <div className="section-title">
-                        <span className="icon">
-                            <svg className="icon-cutlery" viewBox="0 0 24 24"><path d="M4 3v7a2 2 0 0 0 2 2v9h2v-9a2 2 0 0 0 2-2V3h-2v4h-1V3H7v4H6V3H4zm10.5 0L14 3.5v7a3.5 3.5 0 0 0 2.5 3.346V21h2v-7.154A3.5 3.5 0 0 0 21 13.5V3.5L19.5 3 18 3.5 16.5 3z" /></svg>
-                        </span>
-                        <span>Mau Tambah Sesuatu?</span>
+                {/* 4. Action Chips (Address & Notes) */}
+                <div className="action-row">
+                    {orderType === 'delivery' && (
+                        <div className="action-chip" onClick={openLocationModal}>
+                            <div className="chip-icon">📍</div>
+                            <div className="chip-text">
+                                <span className="chip-label">Alamat Antar</span>
+                                <span className="chip-val">{location || 'Isi Alamat'}</span>
+                            </div>
+                        </div>
+                    )}
+                    <div className="action-chip" onClick={openNotesModal}>
+                        <div className="chip-icon">📝</div>
+                        <div className="chip-text">
+                            <span className="chip-label">Catatan</span>
+                            <span className="chip-val">{notes || 'Tulis Catatan'}</span>
+                        </div>
                     </div>
-                    <div className="addon-list" id="addonList">
-                        {productsData.map(m => (
-                            <div className="addon-card" key={m.id}>
-                                <div className="addon-thumb">
-                                    <img src={`/assets/${m.imgFile}`} alt={m.name}
-                                        onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://placehold.co/300x200?text=${encodeURIComponent(m.name)}`; }}
+                </div>
+
+                {/* 5. Smart Impulse Buy (Recommendations from API) */}
+                {recommendations.length > 0 && (
+                    <div className="upsell-section">
+                        <div className="section-title">
+                            <span>{upsellEmoji}</span> {upsellTitle}
+                        </div>
+                        <div className="upsell-scroll">
+                            {recommendations.map(m => (
+                                <div className="upsell-card" key={m.id}>
+                                    <img
+                                        src={getImageUrl(m.image)}
+                                        className="upsell-img"
+                                        alt={m.name}
+                                        onError={(e) => { e.currentTarget.src = '/assets/logo.png'; }}
                                     />
+                                    <div className="upsell-name">{m.name}</div>
+                                    <div className="upsell-price">{formatRupiah(m.price)}</div>
+                                    <button className="btnAdd" onClick={() => addAddon(m)}>
+                                        Mau ini +
+                                    </button>
                                 </div>
-                                <div className="addon-name">{m.name}</div>
-                                <div className="addon-price">{formatRupiah(m.price)}</div>
-                                <div className="addon-footer">
-                                    <span className="addon-label">Tambah</span>
-                                    <button className="addon-add-btn" onClick={() => addAddon(m.id)}>+</button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="section-title" style={{ marginTop: 20 }}>
-                        <span className="icon">📝</span>
-                        <span>Catatan Khusus</span>
-                    </div>
-
-                    <div
-                        className="notes-card"
-                        role="button"
-                        tabIndex={0}
-                        onClick={openNotesModal}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openNotesModal(); }}
-                    >
-                        <div className="notes-icon" aria-hidden="true">
-                            {/* playful pencil/sticky icon (simple SVG) */}
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" fill="#2C3E50" opacity="0.06" />
-                                <path d="M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="#F7DC6F" />
-                                <path d="M14.06 4.94l3.75 3.75" stroke="#2C3E50" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </div>
-
-                        <div className="notes-content">
-                            <div className="notes-title">Catatan Untuk Dapur</div>
-                            <div className={`notes-placeholder ${notes ? 'truncated' : ''}`}>
-                                {notes ? notes : 'Contoh: Jangan pedas, tanpa sayur...'}
-                            </div>
-                        </div>
-
-                        <div className="notes-action">Tambah</div>
-                    </div>
-
-                    {/* NOTES Modal (bottom sheet) - wired to notes state/handlers */}
-                    <div className={`notes-modal-backdrop ${notesOpen ? 'show' : ''}`} onClick={closeNotesModal}>
-                        <div className="notes-modal" onClick={(e) => e.stopPropagation()}>
-                            <div className="notes-modal-header">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--qx-yellow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" fill="#2C3E50" /></svg>
-                                    </div>
-                                    <span className="notes-modal-title">Catatan Untuk Dapur</span>
-                                </div>
-                                <button className="notes-modal-close" onClick={closeNotesModal} aria-label="Tutup">×</button>
-                            </div>
-
-                            <textarea className="notes-textarea" value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} placeholder="Contoh: Jangan pedas, tanpa sayur..." />
-
-                            <div className="notes-modal-footer">
-                                <button className="notes-btn-clear" onClick={clearNotes}>Hapus</button>
-                                <button className="notes-btn-save" onClick={saveNotes}>Simpan</button>
-                            </div>
+                            ))}
                         </div>
                     </div>
+                )}
 
-                    <div style={{ height: 90 }} />
+                {/* 6. Modals */}
+                {locationModalOpen && (
+                    <div className="modal-overlay" onClick={() => setLocationModalOpen(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div className="modal-title">Antar Kemana?</div>
+                            <textarea
+                                className="modal-input"
+                                rows={3}
+                                autoFocus
+                                value={locationDraft}
+                                onChange={(e) => setLocationDraft(e.target.value)}
+                                placeholder="Jalan, Nomor Rumah, Patokan..."
+                            />
+                            <button className="modal-btn" onClick={saveLocationFromModal}>Simpan Lokasi</button>
+                        </div>
+                    </div>
+                )}
+
+                {notesOpen && (
+                    <div className="modal-overlay" onClick={() => setNotesOpen(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <div className="modal-title">Pesan Khusus</div>
+                            <textarea
+                                className="modal-input"
+                                rows={3}
+                                autoFocus
+                                value={notesDraft}
+                                onChange={(e) => setNotesDraft(e.target.value)}
+                                placeholder="Jangan pedas, kurang gula..."
+                            />
+                            <button className="modal-btn" onClick={saveNotes}>Simpan Catatan</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* 7. Floating Action Bar (Like delivery apps) */}
+                <div className="float-bar">
+                    <div className="bar-info">
+                        <span className="bar-label">Total Tagihan</span>
+                        <span className="bar-total">{formatRupiah(checkoutState.subtotal)}</span>
+                    </div>
+                    <button className="bar-btn" onClick={handleOrderNow} disabled={isSubmitting}>
+                        <span>Pesan</span>
+                        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                    </button>
                 </div>
 
-                <div className="bottom-fixed">
-                    <div className="bottom-fixed-inner">
-                        <div className="summary-card">
-                            <div className="summary-title">Ringkasan Pembayaran</div>
-                            <div className="summary-row"><span>Subtotal</span><span id="subtotalText">{formatRupiah(checkoutState.subtotal)}</span></div>
-                            <div className="summary-row total"><span>Total Pembayaran</span><span className="value" id="totalTextBottom">{formatRupiah(checkoutState.subtotal)}</span></div>
-                        </div>
-                        <button className="primary-btn" onClick={handleOrderNow} disabled={isSubmitting}>
-                            {isSubmitting ? 'Memproses...' : 'Pesan Sekarang'}
-                        </button>
-                    </div>
-                </div>
             </div>
         </>
     );
