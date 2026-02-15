@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createOrder, getImageUrl, getProducts } from '../../services/api'; // Added getProducts
+import { createOrder, getImageUrl, getProducts } from '../../services/api';
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -23,8 +23,8 @@ export default function CheckoutPage() {
     const [upsellTitle, setUpsellTitle] = useState('Teman Makan Enak');
     const [upsellEmoji, setUpsellEmoji] = useState('🍟');
 
-    // Haptic Feedback Helper
-    const vibrate = (ms = 15) => {
+    // Haptic Feedback
+    const vibrate = (ms = 10) => {
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
             navigator.vibrate(ms);
         }
@@ -32,7 +32,6 @@ export default function CheckoutPage() {
 
     // Load state & Fetch Products
     useEffect(() => {
-        // 1. Load Checkout State
         try {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
@@ -50,7 +49,6 @@ export default function CheckoutPage() {
             if (saved && !location) setLocation(saved);
         } catch (e) { }
 
-        // 2. Fetch Real Products for Recommendations
         const fetchRecommendations = async () => {
             let storeId = null;
             try {
@@ -61,35 +59,28 @@ export default function CheckoutPage() {
                 }
             } catch (e) { }
 
-            // Fetch all products
             try {
                 const rawData = await getProducts(storeId);
-                // Safety check: Ensure it's an array
                 if (Array.isArray(rawData)) {
                     setAllProducts(rawData);
                 } else if (rawData && Array.isArray(rawData.data)) {
-                    setAllProducts(rawData.data); // Handle { data: [...] } format
+                    setAllProducts(rawData.data);
                 } else if (rawData && Array.isArray(rawData.products)) {
-                    setAllProducts(rawData.products); // Handle { products: [...] } format
+                    setAllProducts(rawData.products);
                 } else {
-                    console.warn('[Checkout] Products API returned non-array:', rawData);
                     setAllProducts([]);
                 }
             } catch (err) {
-                console.error('[Checkout] Failed to load products for upsell:', err);
                 setAllProducts([]);
             }
         };
-
         fetchRecommendations();
     }, []);
 
-    // --- SMART RECOMMENDATION ENGINE (ROBUST VERSION) ---
+    // --- SMART RECOMMENDATION ENGINE ---
     useEffect(() => {
-        // Wait for data & Safety Check
         if (!allProducts || !Array.isArray(allProducts) || allProducts.length === 0) return;
 
-        // 1. Analyze Cart Category Counts
         let foodCount = 0;
         let drinkCount = 0;
         const cartIds = new Set(checkoutState.items.map(i => i.id));
@@ -97,16 +88,13 @@ export default function CheckoutPage() {
         checkoutState.items.forEach(item => {
             const name = (item.name || '').toLowerCase();
             const cat = (item.category || '').toLowerCase();
-
             const isFood = cat.includes('makan') || cat.includes('dish') || name.includes('nasi') || name.includes('mie') || name.includes('ayam');
             const isDrink = cat.includes('minum') || cat.includes('drink') || name.includes('es ') || name.includes('teh') || name.includes('kopi');
-
             if (isFood) foodCount += item.qty;
             if (isDrink) drinkCount += item.qty;
         });
 
-        // 2. Determine Strategy
-        let targetStrategy = 'random'; // default
+        let targetStrategy = 'random';
         let title = 'Mungkin Kamu Suka';
         let emoji = '🤩';
 
@@ -124,11 +112,7 @@ export default function CheckoutPage() {
             emoji = '🍟';
         }
 
-        // 3. Filter Candidates (Exclude Cart Items & Inactive)
-        // Note: We check 'isActive' loosely (if property missing, assume active for safety, or adjust based on DB schema)
         let candidates = allProducts.filter(p => !cartIds.has(p.id) && (p.isActive !== false));
-
-        // 4. Apply Strategy Filtering
         let filtered = [];
 
         const isMatch = (p, type) => {
@@ -140,32 +124,23 @@ export default function CheckoutPage() {
             return false;
         };
 
-        if (targetStrategy !== 'random') {
-            filtered = candidates.filter(p => isMatch(p, targetStrategy));
-        }
-
-        // 5. Ultimate Fallback
-        // If strategy returned nothing (or it was random), use ALL candidates
+        if (targetStrategy !== 'random') filtered = candidates.filter(p => isMatch(p, targetStrategy));
         if (filtered.length === 0) {
-            // If we really couldn't find specific matches, just show ANY available candidate
             filtered = candidates;
-            title = 'Teman Makan Enak'; // Generic Title
+            title = 'Teman Makan Enak';
             emoji = '🔥';
         }
 
-        // 6. Refine & Limit (Smart Selection)
+
         const finalRecommendations = filtered
             .sort((a, b) => {
-                // Priority 1: Has Image
                 const hasImgA = !!(a.image || a.imgFile);
                 const hasImgB = !!(b.image || b.imgFile);
                 if (hasImgA && !hasImgB) return -1;
                 if (!hasImgA && hasImgB) return 1;
-
-                // Priority 2: Randomize within same tier
                 return 0.5 - Math.random();
             })
-            .slice(0, 5); // Max 5 items
+            .slice(0, 5);
 
         setRecommendations(finalRecommendations);
         setUpsellTitle(title);
@@ -173,11 +148,10 @@ export default function CheckoutPage() {
 
     }, [checkoutState.items, allProducts]);
 
-
     const recalcSubtotal = (items) => items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
 
     const changeQty = (index, delta) => {
-        vibrate(10); // Haptic tick
+        vibrate(10);
         setCheckoutState(prev => {
             const items = [...prev.items];
             const it = items[index];
@@ -190,7 +164,7 @@ export default function CheckoutPage() {
     };
 
     const addAddon = (item) => {
-        vibrate(20); // Stronger haptic
+        vibrate(15);
         setCheckoutState(prev => {
             const items = [...prev.items];
             const existing = items.find(i => i.id === item.id);
@@ -203,7 +177,7 @@ export default function CheckoutPage() {
                     price: item.price,
                     qty: 1,
                     image: item.image || item.imgFile,
-                    category: item.category // Store category for better logic next time
+                    category: item.category
                 });
             }
             return { items, subtotal: recalcSubtotal(items) };
@@ -211,13 +185,12 @@ export default function CheckoutPage() {
     };
 
     const setOrderType = (type) => {
-        vibrate(15);
+        vibrate(10);
         setOrderTypeState(type);
         setCheckoutState(prev => ({ ...prev, orderType: type }));
         if (type === 'delivery') setTimeout(() => locationInputRef.current?.focus(), 80);
     };
 
-    // Location & Notes handlers
     const openLocationModal = () => { setLocationDraft(location || ''); setLocationModalOpen(true); vibrate(); };
     const saveLocationFromModal = () => {
         setLocation(locationDraft);
@@ -232,7 +205,7 @@ export default function CheckoutPage() {
     };
 
     const handleOrderNow = () => {
-        vibrate(30);
+        vibrate(20);
         if (!checkoutState.items || checkoutState.items.length === 0) {
             alert('Belum ada pesanan.');
             return;
@@ -266,9 +239,6 @@ export default function CheckoutPage() {
     };
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
-
-    // Tax & Total Calculation (Mockup logic)
-    const tax = Math.round(checkoutState.subtotal * 0.1);
     const finalTotal = checkoutState.subtotal;
 
     return (
@@ -277,7 +247,7 @@ export default function CheckoutPage() {
                 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
                 
                 :root {
-                    --primary: #FACC15;
+                    --primary: #FACC15; /* Yellow Original */
                     --primary-dark: #EAB308;
                     --primary-soft: #FEFCE8;
                     --text-main: #111827;
@@ -285,147 +255,207 @@ export default function CheckoutPage() {
                     --bg-page: #FAFAFA;
                     --card-bg: #FFFFFF;
                     --accent-red: #EF4444;
-                    --shadow-soft: 0 4px 24px rgba(0,0,0,0.03);
-                    --shadow-float: 0 12px 32px rgba(0,0,0,0.06);
+                    --shadow-soft: 0 2px 10px rgba(0,0,0,0.03);
+                    --shadow-float: 0 8px 24px rgba(0,0,0,0.06);
                 }
                 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
                 body { margin: 0; font-family: 'Outfit', sans-serif; background: var(--bg-page); color: var(--text-main); }
                 
-                .checkout-container { max-width: 480px; margin: 0 auto; min-height: 100vh; padding: 24px; padding-bottom: 140px; }
-                
-                /* --- Header --- */
-                .page-header { display: flex; align-items: center; margin-bottom: 28px; position: sticky; top: 0; z-index: 40; padding: 12px 0; background: rgba(250,250,250,0.8); backdrop-filter: blur(8px); transition: all 0.3s; }
-                .btn-icon { width: 44px; height: 44px; border-radius: 14px; border: 1px solid rgba(0,0,0,0.05); background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--shadow-soft); transition: transform 0.1s; color: var(--text-main); }
-                .btn-icon:active { transform: scale(0.92); }
-                .page-title { flex: 1; text-align: center; font-size: 1.15rem; font-weight: 700; margin-right: 44px; letter-spacing: -0.02em; }
-
-                /* --- Order Type Segmented Control --- */
-                .segment-control { background: #F3F4F6; padding: 5px; border-radius: 18px; display: grid; grid-template-columns: 1fr 1fr 1fr; position: relative; margin-bottom: 32px; }
-                .segment-btn { border: none; background: transparent; padding: 10px; font-weight: 600; font-size: 0.85rem; color: var(--text-sec); cursor: pointer; position: relative; z-index: 2; transition: color 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px; border-radius: 14px; }
-                .segment-btn.active { color: var(--text-main); }
-                .segment-indicator { position: absolute; top: 5px; bottom: 5px; background: white; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); z-index: 1; width: calc(33.33% - 6.66px); }
-                /* Indicator Positions */
-                .pos-0 { left: 5px; } 
-                .pos-1 { left: calc(33.33% + 1.66px); } 
-                .pos-2 { left: calc(66.66% - 1.66px); }
-
-                /* --- Receipt Card --- */
-                .receipt-card { 
-                    background: white; border-radius: 24px; padding: 20px; box-shadow: var(--shadow-soft); 
-                    position: relative; overflow: hidden; margin-bottom: 32px;
+                /* FIXED: COMPACT CENTERED CONTAINER WITH MARGINS */
+                .checkout-container { 
+                    width: 100%;
+                    max-width: 480px; 
+                    margin: 0 auto; /* Force Center */
+                    min-height: 100vh; 
+                    padding: 24px 24px; /* Increased side padding for "margin" effect */
+                    padding-bottom: 120px; /* Space for float bar */
+                    box-sizing: border-box;
+                    background: var(--bg-page);
                 }
-                .receipt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px dashed #F3F4F6; padding-bottom: 16px; }
-                .receipt-brand { font-weight: 800; font-size: 1rem; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
-                .receipt-date { font-size: 0.8rem; color: var(--text-sec); }
-
-                /* List Item */
-                .menu-item { display: flex; gap: 14px; margin-bottom: 16px; align-items: center; animation: slideIn 0.3s ease forwards; }
-                @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-                .menu-thumb { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; background: #eee; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-                .menu-details { flex: 1; }
-                .menu-name { font-weight: 700; font-size: 0.95rem; line-height: 1.25; margin-bottom: 4px; }
-                .menu-price { font-weight: 600; font-size: 0.9rem; color: var(--text-sec); }
                 
-                /* Qty Control Modern */
-                .qty-control { display: flex; align-items: center; background: #F9FAFB; border-radius: 12px; padding: 2px; border: 1px solid #E5E7EB; }
-                .qty-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: white; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; color: var(--text-main); font-weight: 700; transition: transform 0.1s; }
-                .qty-btn:active { transform: scale(0.9); background: #eee; }
-                .qty-display { width: 24px; text-align: center; font-size: 0.9rem; font-weight: 700; }
+                /* --- Header (Compact) --- */
+                .page-header { 
+                    display: flex; align-items: center; margin-bottom: 24px; 
+                    position: sticky; top: 0; z-index: 40; padding: 12px 0; 
+                    background: rgba(250,250,250,0.9); backdrop-filter: blur(8px); 
+                    margin-left: -4px; margin-right: -4px; /* Slight overflow for header play */
+                }
+                .btn-icon { 
+                    width: 40px; height: 40px; 
+                    border-radius: 12px; border: 1px solid rgba(0,0,0,0.05); 
+                    background: white; display: flex; align-items: center; justify-content: center; 
+                    cursor: pointer; box-shadow: var(--shadow-soft); color: var(--text-main); 
+                }
+                .btn-icon:active { transform: scale(0.92); }
+                .page-title { flex: 1; text-align: center; font-size: 1.05rem; font-weight: 700; }
+
+                /* --- Order Type (Compact) --- */
+                .segment-control { 
+                    background: #F3F4F6; padding: 4px; border-radius: 16px; 
+                    display: grid; grid-template-columns: 1fr 1fr 1fr; 
+                    position: relative; margin-bottom: 24px; 
+                }
+                .segment-btn { 
+                    border: none; background: transparent; padding: 10px; 
+                    font-weight: 600; font-size: 0.8rem; 
+                    color: var(--text-sec); cursor: pointer; position: relative; z-index: 2; 
+                    display: flex; flex-direction: column; align-items: center; gap: 4px; 
+                    border-radius: 12px; 
+                }
+                .segment-btn.active { color: var(--text-main); }
+                .segment-indicator { 
+                    position: absolute; top: 4px; bottom: 4px; background: white; 
+                    border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); 
+                    transition: left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); z-index: 1; 
+                    width: calc(33.33% - 5.33px); 
+                }
+                .pos-0 { left: 4px; } 
+                .pos-1 { left: calc(33.33% + 1.33px); } 
+                .pos-2 { left: calc(66.66% - 1.33px); }
+
+                /* --- Receipt Card (Compact) --- */
+                .receipt-card { 
+                    background: white; border-radius: 20px; padding: 20px; 
+                    box-shadow: var(--shadow-soft); margin-bottom: 24px;
+                }
+                .receipt-header { 
+                    display: flex; justify-content: space-between; align-items: center; 
+                    margin-bottom: 16px; border-bottom: 1px dashed #F3F4F6; padding-bottom: 12px; 
+                }
+                .receipt-brand { font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+                .receipt-date { font-size: 0.75rem; color: var(--text-sec); }
+
+                /* List Item (Compact) */
+                .menu-item { display: flex; gap: 14px; margin-bottom: 16px; align-items: center; }
+                .menu-thumb { 
+                    width: 52px; height: 52px; 
+                    border-radius: 14px; object-fit: cover; background: #eee; 
+                }
+                .menu-details { flex: 1; min-width: 0; }
+                .menu-name { 
+                    font-weight: 700; font-size: 0.9rem; line-height: 1.2; 
+                    margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+                }
+                .menu-price { font-weight: 500; font-size: 0.85rem; color: var(--text-sec); }
+                
+                /* Qty Control (Compact) */
+                .qty-control { 
+                    display: flex; align-items: center; background: #F9FAFB; 
+                    border-radius: 8px; padding: 2px; border: 1px solid #E5E7EB; 
+                    height: 32px;
+                }
+                .qty-btn { 
+                    width: 28px; height: 28px; 
+                    display: flex; align-items: center; justify-content: center; border: none; 
+                    background: white; border-radius: 6px; box-shadow: 0 1px 1px rgba(0,0,0,0.05); 
+                    cursor: pointer; font-size: 0.9rem; font-weight: 700;
+                }
+                .qty-display { width: 24px; text-align: center; font-size: 0.85rem; font-weight: 600; }
 
                 /* Receipt Summary */
-                .bill-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 8px; color: var(--text-sec); }
-                .bill-total { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 16px; border-top: 2px dashed #F3F4F6; }
-                .total-label { font-weight: 800; font-size: 1.1rem; }
-                .total-value { font-weight: 800; font-size: 1.2rem; color: var(--text-main); letter-spacing: -0.03em; }
+                .bill-row { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px; color: var(--text-sec); }
+                .bill-total { 
+                    display: flex; justify-content: space-between; margin-top: 14px; padding-top: 14px; 
+                    border-top: 1px dashed #F3F4F6; 
+                }
+                .total-label { font-weight: 700; font-size: 1rem; }
+                .total-value { font-weight: 800; font-size: 1.1rem; color: var(--text-main); }
 
-                /* --- Upselling (Impulse Buy) --- */
-                .upsell-section { margin-bottom: 32px; }
-                .section-title { font-weight: 800; font-size: 1.1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-                .upsell-scroll { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 16px; scroll-snap-type: x mandatory; -ms-overflow-style: none; scrollbar-width: none; }
-                .upsell-scroll::-webkit-scrollbar { display: none; }
-                .upsell-card { min-width: 140px; scroll-snap-align: start; background: white; border-radius: 20px; padding: 10px; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; gap: 8px; border: 1px solid rgba(0,0,0,0.02); transition: transform 0.2s; }
-                .upsell-card:active { transform: scale(0.98); }
-                .upsell-img { width: 100%; height: 100px; border-radius: 16px; object-fit: cover; background: #f0f0f0; }
-                .upsell-name { font-weight: 700; font-size: 0.9rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .upsell-price { font-size: 0.85rem; color: var(--text-sec); font-weight: 600; }
-                .btnAdd { width: 100%; background: var(--primary-soft); color: #B45309; font-weight: 700; border: none; padding: 8px; border-radius: 12px; cursor: pointer; font-size: 0.85rem; transition: background 0.2s; }
-                .btnAdd:active { background: var(--primary); color: black; }
-
-                /* --- Notes & Location --- */
-                .action-row { display: flex; gap: 12px; margin-bottom: 24px; overflow-x: auto; padding-right: 4px; }
+                /* --- Actions (Compact Grid) --- */
+                .action-row { 
+                    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; 
+                }
                 .action-chip { 
-                    flex: 1; min-width: 140px; background: white; border: 1px solid #E5E7EB; border-radius: 16px; 
-                    padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; 
-                    transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+                    background: white; border: 1px solid #E5E7EB; border-radius: 16px; 
+                    padding: 12px; display: flex; align-items: center; gap: 10px; cursor: pointer; 
+                    transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
                 }
                 .action-chip:active { transform: scale(0.98); background: #F9FAFB; }
-                .chip-icon { color: #F59E0B; }
-                .chip-text { display: flex; flex-direction: column; }
-                .chip-label { font-size: 0.75rem; color: var(--text-sec); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-                .chip-val { font-size: 0.9rem; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+                .chip-icon { color: #F59E0B; font-size: 1.2rem; }
+                .chip-text { display: flex; flex-direction: column; overflow: hidden; }
+                .chip-label { font-size: 0.7rem; color: var(--text-sec); font-weight: 600; text-transform: uppercase; }
+                .chip-val { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-                /* --- Bottom Float Bar --- */
+                /* --- Upsell (Compact Horizontal) --- */
+                .upsell-section { margin-bottom: 24px; }
+                .section-title { font-weight: 700; font-size: 1rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+                .upsell-scroll { 
+                    display: flex; overflow-x: auto; gap: 12px; padding-bottom: 8px; padding-left: 2px;
+                    scroll-snap-type: x mandatory; -ms-overflow-style: none; scrollbar-width: none; 
+                }
+                .upsell-scroll::-webkit-scrollbar { display: none; }
+                .upsell-card { 
+                    min-width: 130px; max-width: 130px; 
+                    scroll-snap-align: start; background: white; border-radius: 16px; 
+                    padding: 10px; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; 
+                    gap: 8px; border: 1px solid rgba(0,0,0,0.02); 
+                }
+                .upsell-img { width: 100%; height: 90px; border-radius: 12px; object-fit: cover; background: #f0f0f0; }
+                .upsell-name { font-weight: 600; font-size: 0.8rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .upsell-price { font-size: 0.75rem; color: var(--text-sec); font-weight: 500; }
+                .btnAdd { 
+                    width: 100%; background: var(--primary-soft); color: #B45309; font-weight: 700; 
+                    border: none; padding: 8px; border-radius: 10px; cursor: pointer; font-size: 0.8rem; 
+                }
+
+                /* --- Bottom Float Bar (Centered) --- */
                 .float-bar { 
-                    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: calc(100% - 40px); max-width: 440px;
-                    background: #111827; border-radius: 24px; padding: 8px 8px 8px 24px; display: flex; align-items: center; justify-content: space-between;
-                    box-shadow: 0 12px 40px rgba(17, 24, 39, 0.4); z-index: 100; animation: slideUpBar 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+                    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); 
+                    width: calc(100% - 48px); /* Match padding of container (24px * 2) */
+                    max-width: 432px; /* 480px - 48px padding */
+                    background: #111827; border-radius: 20px; padding: 8px 8px 8px 24px; 
+                    display: flex; align-items: center; justify-content: space-between;
+                    box-shadow: 0 8px 24px rgba(17, 24, 39, 0.3); z-index: 100;
                 }
-                @keyframes slideUpBar { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
                 .bar-info { display: flex; flex-direction: column; }
-                .bar-label { font-size: 0.75rem; color: rgba(255,255,255,0.6); font-weight: 600; }
-                .bar-total { font-size: 1.1rem; color: white; font-weight: 800; }
+                .bar-label { font-size: 0.7rem; color: rgba(255,255,255,0.6); font-weight: 600; }
+                .bar-total { font-size: 1.05rem; color: white; font-weight: 700; }
                 .bar-btn { 
-                    background: var(--primary); color: #111827; border: none; padding: 14px 24px; 
-                    border-radius: 18px; font-weight: 800; font-size: 1rem; cursor: pointer; 
-                    box-shadow: 0 4px 12px rgba(250, 204, 21, 0.3); transition: transform 0.2s;
-                    display: flex; align-items: center; gap: 8px;
+                    background: var(--primary); color: #111827; border: none; padding: 12px 24px; 
+                    border-radius: 16px; font-weight: 700; font-size: 0.95rem; cursor: pointer; 
                 }
-                .bar-btn:active { transform: scale(0.95); }
 
                 /* Empty State */
-                .empty-block { text-align: center; padding: 60px 20px; opacity: 0.6; }
-                .empty-icon { font-size: 4rem; margin-bottom: 16px; display: block; animation: bounce 2s infinite; }
-                @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+                .empty-block { text-align: center; padding: 40px 20px; opacity: 0.6; }
+                .empty-icon { font-size: 3rem; margin-bottom: 12px; display: block; }
 
-                /* Modals common */
-                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
-                .modal-content { background: white; width: 100%; max-width: 480px; border-radius: 32px 32px 0 0; padding: 32px 24px; animation: slideUpModal 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
-                @keyframes slideUpModal { from { transform: translateY(100%); } to { transform: translateY(0); } }
-                .modal-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 16px; }
-                .modal-input { width: 100%; padding: 16px; border-radius: 16px; border: 2px solid #F3F4F6; font-family: inherit; font-size: 1rem; outline: none; transition: border 0.2s; background: #F9FAFB; }
-                .modal-input:focus { border-color: var(--primary); background: white; }
-                .modal-btn { width: 100%; padding: 16px; margin-top: 20px; background: var(--text-main); color: white; border: none; border-radius: 16px; font-weight: 700; font-size: 1rem; cursor: pointer; }
+                /* Modals */
+                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
+                .modal-content { background: white; width: 100%; max-width: 480px; border-radius: 24px 24px 0 0; padding: 28px 24px; }
+                .modal-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 16px; }
+                .modal-input { width: 100%; padding: 14px; border-radius: 14px; border: 2px solid #F3F4F6; font-family: inherit; font-size: 0.95rem; outline: none; background: #F9FAFB; }
+                .modal-btn { width: 100%; padding: 16px; margin-top: 20px; background: var(--text-main); color: white; border: none; border-radius: 16px; font-weight: 700; font-size: 1rem; }
             `}</style>
 
             <div className="checkout-container">
-                {/* 1. Header with Glass effect */}
+                {/* 1. Header */}
                 <header className="page-header">
                     <button className="btn-icon" onClick={() => router.back()}>
-                        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
+                        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <div className="page-title">Pembayaran</div>
-                    <div style={{ width: 44 }}></div>
+                    <div className="page-title">Checkout</div>
+                    <div style={{ width: 40 }}></div>
                 </header>
 
                 {/* 2. Segmented Order Type */}
                 <div className="segment-control">
                     <div className={`segment-indicator pos-${orderType === 'dinein' ? '0' : orderType === 'takeaway' ? '1' : '2'}`}></div>
                     <button className={`segment-btn ${orderType === 'dinein' ? 'active' : ''}`} onClick={() => setOrderType('dinein')}>
-                        <span>🍽️</span> Makan Sini
+                        <span style={{ fontSize: '1.2rem' }}>🍽️</span> Makan Sini
                     </button>
                     <button className={`segment-btn ${orderType === 'takeaway' ? 'active' : ''}`} onClick={() => setOrderType('takeaway')}>
-                        <span>🥡</span> Bungkus
+                        <span style={{ fontSize: '1.2rem' }}>🥡</span> Bungkus
                     </button>
                     <button className={`segment-btn ${orderType === 'delivery' ? 'active' : ''}`} onClick={() => setOrderType('delivery')}>
-                        <span>🛵</span> Antar
+                        <span style={{ fontSize: '1.2rem' }}>🛵</span> Antar
                     </button>
                 </div>
 
-                {/* 3. Receipt Card (The Bill) */}
+                {/* 3. Receipt Card */}
                 <div className="receipt-card">
                     <div className="receipt-header">
                         <div className="receipt-brand">
-                            <span style={{ fontSize: '1.2rem' }}>🧾</span> Dapur QuackXel
+                            <span style={{ fontSize: '1.1rem' }}>🧾</span> Dapur QuackXel
                         </div>
                         <div className="receipt-date">{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</div>
                     </div>
@@ -453,21 +483,12 @@ export default function CheckoutPage() {
                     ) : (
                         <div className="empty-block">
                             <span className="empty-icon">🍽️</span>
-                            <div style={{ fontWeight: 600 }}>Belum ada pesanan</div>
+                            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Belum ada pesanan</div>
                         </div>
                     )}
 
-                    {/* Bill Summary */}
                     {checkoutState.items.length > 0 && (
-                        <div style={{ marginTop: 24 }}>
-                            <div className="bill-row">
-                                <span>Subtotal</span>
-                                <span>{formatRupiah(checkoutState.subtotal)}</span>
-                            </div>
-                            <div className="bill-row">
-                                <span>Pajak & Layanan</span>
-                                <span>Termasuk</span>
-                            </div>
+                        <div>
                             <div className="bill-total">
                                 <span className="total-label">Total</span>
                                 <span className="total-value">{formatRupiah(finalTotal)}</span>
@@ -476,7 +497,7 @@ export default function CheckoutPage() {
                     )}
                 </div>
 
-                {/* 4. Action Chips (Address & Notes) */}
+                {/* 4. Action Chips */}
                 <div className="action-row">
                     {orderType === 'delivery' && (
                         <div className="action-chip" onClick={openLocationModal}>
@@ -487,7 +508,7 @@ export default function CheckoutPage() {
                             </div>
                         </div>
                     )}
-                    <div className="action-chip" onClick={openNotesModal}>
+                    <div className="action-chip" style={orderType !== 'delivery' ? { gridColumn: 'span 2' } : {}} onClick={openNotesModal}>
                         <div className="chip-icon">📝</div>
                         <div className="chip-text">
                             <span className="chip-label">Catatan</span>
@@ -496,7 +517,7 @@ export default function CheckoutPage() {
                     </div>
                 </div>
 
-                {/* 5. Smart Impulse Buy (Recommendations from API) */}
+                {/* 5. Smart Impulse Buy */}
                 {recommendations.length > 0 && (
                     <div className="upsell-section">
                         <div className="section-title">
@@ -514,7 +535,7 @@ export default function CheckoutPage() {
                                     <div className="upsell-name">{m.name}</div>
                                     <div className="upsell-price">{formatRupiah(m.price)}</div>
                                     <button className="btnAdd" onClick={() => addAddon(m)}>
-                                        Mau ini +
+                                        Tambah +
                                     </button>
                                 </div>
                             ))}
@@ -529,7 +550,7 @@ export default function CheckoutPage() {
                             <div className="modal-title">Antar Kemana?</div>
                             <textarea
                                 className="modal-input"
-                                rows={3}
+                                rows={2}
                                 autoFocus
                                 value={locationDraft}
                                 onChange={(e) => setLocationDraft(e.target.value)}
@@ -546,7 +567,7 @@ export default function CheckoutPage() {
                             <div className="modal-title">Pesan Khusus</div>
                             <textarea
                                 className="modal-input"
-                                rows={3}
+                                rows={2}
                                 autoFocus
                                 value={notesDraft}
                                 onChange={(e) => setNotesDraft(e.target.value)}
@@ -557,15 +578,14 @@ export default function CheckoutPage() {
                     </div>
                 )}
 
-                {/* 7. Floating Action Bar (Like delivery apps) */}
+                {/* 7. Floating Action Bar */}
                 <div className="float-bar">
                     <div className="bar-info">
                         <span className="bar-label">Total Tagihan</span>
                         <span className="bar-total">{formatRupiah(checkoutState.subtotal)}</span>
                     </div>
                     <button className="bar-btn" onClick={handleOrderNow} disabled={isSubmitting}>
-                        <span>Pesan</span>
-                        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                        <span>Pesan Sekarang</span>
                     </button>
                 </div>
 

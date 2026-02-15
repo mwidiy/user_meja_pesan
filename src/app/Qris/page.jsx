@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { getDynamicUrl } from '../../services/api';
 import io from 'socket.io-client';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function QrisPage() {
     const router = useRouter();
@@ -152,7 +153,7 @@ export default function QrisPage() {
             };
             const param = encodeURIComponent(JSON.stringify(finalState));
             router.push(`/order?state=${param}`);
-        }, 1000);
+        }, 2500); // 2.5s delay to show the nice animation
     };
 
     const formatTime = (sec) => {
@@ -164,6 +165,7 @@ export default function QrisPage() {
     return (
         <div className="app">
             <style jsx global>{`
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
                 :root {
                     --bg-main: #2C3E50;
                     --card-bg: #FFFFFF;
@@ -173,35 +175,36 @@ export default function QrisPage() {
                     --accent-red-soft: #FEF2F2;
                     --border-soft: #E2E8F0;
                 }
-                * { margin:0; padding:0; box-sizing:border-box; font-family:'Inter',sans-serif; }
+                * { margin:0; padding:0; box-sizing:border-box; font-family:'Poppins',sans-serif; }
                 body { background:#111827; }
-                .app { width:100%; max-width:414px; margin:0 auto; min-height:100vh; background:var(--bg-main); padding-top:80px; padding-bottom:24px; position:relative; }
+                .app { width:100%; max-width:480px; margin:0 auto; min-height:100vh; background:var(--bg-main); padding-top:80px; padding-bottom:24px; position:relative; }
                 
-                .header { position:absolute; top:20px; left:0; right:0; text-align:center; color:#FFF; font-size:18px; font-weight:600; display:flex; align-items:center; justify-content:center; }
-                .btn-back { position:absolute; left:20px; background:none; border:none; cursor:pointer; display:flex; padding:5px; }
+                .header { position:absolute; top:20px; left:0; right:0; text-align:center; color:#FFF; font-size:1.1rem; font-weight:700; display:flex; align-items:center; justify-content:center; }
+                .btn-back { position:absolute; left:20px; background:rgba(255,255,255,0.1); border:none; cursor:pointer; display:flex; padding:8px; border-radius:12px; backdrop-filter:blur(4px); }
                 
-                .card { width:90%; margin:0 auto; background:var(--card-bg); border-radius:24px; padding:32px 24px; box-shadow:0 10px 30px rgba(0,0,0,0.2); text-align:center; position:relative; }
+                .card { width:90%; margin:0 auto; background:var(--card-bg); border-radius:24px; padding:32px 24px; box-shadow:0 10px 40px rgba(0,0,0,0.2); text-align:center; position:relative; }
                 
-                .timer-pill { display:inline-block; background:var(--accent-red-soft); color:var(--accent-red); padding:8px 16px; border-radius:20px; font-weight:700; font-size:14px; margin-bottom:24px; }
+                .timer-pill { display:inline-block; background:var(--accent-red-soft); color:var(--accent-red); padding:8px 16px; border-radius:20px; font-weight:700; font-size:0.85rem; margin-bottom:24px; }
                 
-                .amount-val { font-size:40px; font-weight:800; color:var(--bg-main); line-height:1; }
-                .amount-lbl { font-size:14px; color:var(--text-sub); margin-top:8px; margin-bottom:24px; }
+                .amount-val { font-size:32px; font-weight:800; color:var(--bg-main); line-height:1; }
+                .amount-lbl { font-size:0.9rem; color:var(--text-sub); margin-top:8px; margin-bottom:24px; font-weight:500; }
                 
                 .qr-box { 
                     width:240px; height:240px; margin:0 auto 24px; 
-                    background:#FFF; border:4px solid #F1F5F9; border-radius:16px;
+                    background:#FFF; border:4px solid #F1F5F9; border-radius:24px;
                     display:flex; align-items:center; justify-content:center; overflow:hidden;
+                    box-shadow: inset 0 2px 10px rgba(0,0,0,0.02);
                 }
                 
-                .decor-circle { width:30px; height:30px; background:var(--bg-main); border-radius:50%; position:absolute; top:35%; }
+                .decor-circle { width:30px; height:30px; background:var(--bg-main); border-radius:50%; position:absolute; top:32%; }
                 .decor-left { left:-15px; }
                 .decor-right { right:-15px; }
 
                 .spinner { width:40px; height:40px; border:4px solid #E2E8F0; border-top-color:#3B82F6; border-radius:50%; animation:spin 1s linear infinite; }
                 @keyframes spin { to { transform:rotate(360deg); } }
 
-                .wallets { display:flex; justify-content:center; gap:10px; margin-top:20px; opacity:0.6; }
-                .wallet-icon { width:30px; height:30px; background:#EEE; border-radius:6px; }
+                .wallets { display:flex; justify-content:center; gap:12px; margin-top:24px; opacity:0.8; }
+                .wallet-icon { width:36px; height:36px; background:#F8FAFC; border-radius:10px; border:1px solid #E2E8F0; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#94A3B8; }
             `}</style>
 
             <div className="header">
@@ -237,30 +240,57 @@ export default function QrisPage() {
                     ) : null}
                 </div>
 
-                <img src="/assets/Qris_Logo.svg" alt="QRIS" style={{ height: '32px', marginBottom: '16px' }} />
+                <img src="/assets/Qris_Logo.svg" alt="QRIS" style={{ height: '28px', marginBottom: '20px', opacity: 0.8 }} />
 
-                <p style={{ fontSize: '13px', color: '#666', lineHeight: '1.5' }}>
+                <p style={{ fontSize: '0.85rem', color: '#64748B', lineHeight: '1.6' }}>
                     Scan QR ini dengan GoPay, OVO, Dana, ShopeePay atau Mobile Banking Anda.
                 </p>
 
                 <div className="wallets">
-                    {/* Placeholder icons can go here */}
-                    <div className="wallet-icon"></div>
-                    <div className="wallet-icon"></div>
-                    <div className="wallet-icon"></div>
+                    <div className="wallet-icon">G</div>
+                    <div className="wallet-icon">O</div>
+                    <div className="wallet-icon">D</div>
+                    <div className="wallet-icon">S</div>
                 </div>
             </div>
 
-            {isPaid && (
-                <div style={{
-                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 99,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#FFF'
-                }}>
-                    <div style={{ fontSize: '50px', marginBottom: '20px' }}>✅</div>
-                    <h2>Pembayaran Berhasil!</h2>
-                    <p>Mengalihkan...</p>
-                </div>
-            )}
+            <AnimatePresence>
+                {isPaid && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        className="success-overlay"
+                        style={{
+                            position: 'fixed', inset: 0, background: '#FFFFFF', zIndex: 100,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0 }} animate={{ scale: 1 }}
+                            transition={{ type: 'spring', damping: 15 }}
+                            style={{
+                                width: 80, height: 80, borderRadius: '50%', background: '#10B981',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20
+                            }}
+                        >
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M20 6L9 17l-5-5" />
+                            </svg>
+                        </motion.div>
+                        <motion.h2
+                            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                            style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1F2937' }}
+                        >
+                            Pembayaran Berhasil!
+                        </motion.h2>
+                        <motion.p
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                            style={{ color: '#6B7280', marginTop: 8 }}
+                        >
+                            Terima kasih, pesananmu sedang kami siapkan!
+                        </motion.p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

@@ -88,7 +88,13 @@ function KasirContent() {
                     // QR is generated on the fly via QRCode component
                 }
                 if (parsed.tableName) setTableNumber(parsed.tableName);
-                if (parsed.customerName) setCustomerName(parsed.customerName);
+
+                if (parsed.customerName) {
+                    setCustomerName(parsed.customerName);
+                } else {
+                    const storedName = localStorage.getItem('customerName');
+                    if (storedName) setCustomerName(storedName);
+                }
             }
         } catch (e) {
             console.error("Error parsing state:", e);
@@ -96,11 +102,33 @@ function KasirContent() {
     }, [searchParams]);
 
     const copyCode = () => {
-        navigator.clipboard.writeText(orderCode).then(() => {
-            alert('Kode pesanan disalin: ' + orderCode);
-        }).catch(() => {
-            alert('Kode: ' + orderCode);
-        });
+        if (!orderCode || orderCode === '-') return;
+
+        // Fallback function for HTTP / WebView
+        const fallbackCopy = (text) => {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed"; // prevent scrolling to bottom
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                alert('Kode pesanan disalin: ' + text);
+            } catch (err) {
+                console.error('Fallback copy failed', err);
+                alert('Kode: ' + text);
+            }
+            document.body.removeChild(textArea);
+        };
+
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(orderCode).then(() => {
+                alert('Kode pesanan disalin: ' + orderCode);
+            }).catch(() => fallbackCopy(orderCode));
+        } else {
+            fallbackCopy(orderCode);
+        }
     };
 
     return (
@@ -145,14 +173,15 @@ function KasirContent() {
 
                     <div className="divider"></div>
 
-                    <div className="meta-row">
-                        <div className="meta-inner">
+                    <div className="meta-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: '100%', textAlign: 'center' }}>
+                        <div className="meta-inner" style={{ justifyContent: 'center' }}>
                             <span className="meta-icon-table">
                                 <img src="/assets/Kursi_Icon.svg" alt="Meja" />
                             </span>
                             <span>{tableNumber}</span>
-                            <span className="meta-separator">•</span>
-                            <span>Atas Nama <span className="meta-strong">{customerName}</span></span>
+                        </div>
+                        <div style={{ fontSize: 15, color: '#475569' }}>
+                            Atas Nama <span className="meta-strong" style={{ color: '#1E293B', fontWeight: 700 }}>{customerName}</span>
                         </div>
                     </div>
                 </div>
@@ -168,13 +197,13 @@ function KasirContent() {
                             </div>
                         </div>
                     </div>
-                    <div className="info-card yellow">
+                    <div className="info-card yellow" style={{ background: '#EFF6FF', outlineColor: '#BFDBFE' }}>
                         <div className="info-row-flex">
                             <div className="info-icon">
-                                <img src="/assets/Danger_Icon.svg" alt="Info Pembayaran" />
+                                <img src="/assets/Information_Icon.svg" alt="Info Pembayaran" />
                             </div>
-                            <div className="info-text-wrap soft">
-                                Pesanan diproses setelah<br />pembayaran.
+                            <div className="info-text-wrap soft" style={{ color: '#1E40AF' }}>
+                                Pesanan dapat dibayar<br />setelah pesanan diantar.
                             </div>
                         </div>
                     </div>
@@ -404,14 +433,14 @@ export default function KasirPage() {
         }
         .order-code-text {
             font-family:'JetBrains Mono','Courier New',monospace;
-            font-size:22px; /* sedikit kecil biar seimbang dengan icon */
+            font-size:18px; /* Lebih kecil agar muat */
             letter-spacing:1.1px;
             color:#1E293B;
             white-space:nowrap;
         }
         .copy-btn {
-            width:28px;              /* sedikit lebih kecil, proporsional */
-            height:28px;
+            width:48px;              /* Diperbesar */
+            height:48px;
             border-radius:999px;
             border:none;
             background:transparent;
@@ -423,8 +452,8 @@ export default function KasirPage() {
             flex-shrink:0;
         }
         .copy-btn img {
-            width:18px;
-            height:18px;
+            width:28px;             /* Icon diperbesar */
+            height:28px;
             object-fit:contain;
             display:block;
         }

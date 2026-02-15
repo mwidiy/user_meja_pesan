@@ -1,87 +1,64 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getOrderByTransactionCode } from '../../services/api';
+import { getOrderByTransactionCode, getStore } from '../../services/api';
 
 export default function ReceiptPage() {
     const router = useRouter();
-    const [orderData, setOrderData] = useState({ id: '', items: [], method: 'QRIS', date: '', meta: {}, status: 'paid' });
+    const [orderData, setOrderData] = useState({ id: '', items: [], method: 'QRIS', date: '', meta: {}, status: 'paid', storeName: '' });
 
     useEffect(() => {
-        try {
+        // --- 1. Parsing Order State / Params ---
+        const parseOrderState = async () => {
             const params = new URLSearchParams(window.location.search);
             const raw = params.get('state');
             let parsed = null;
-            if (raw) {
-                parsed = JSON.parse(decodeURIComponent(raw));
-            } else {
-                const saved = localStorage.getItem('order_state_v1');
-                if (saved) parsed = JSON.parse(saved);
-            }
-            if (parsed) {
-                const items = Array.isArray(parsed.items) ? parsed.items : [];
-                // Fix: Priority check. 'method' comes from payment page (cash/qris). 'orderType' is dinein/etc.
-                // We should separate them or prioritize 'method' for payment status check.
-                const paymentMethod = parsed.method || 'QRIS';
-                const consumptionMode = parsed.orderType || 'dinein';
 
-                const id = parsed.id || `MP${Date.now()}`;
-                const date = parsed.date || new Date().toISOString();
-
-                // Status determined by paymentMethod (cash vs qris)
-                const status = (paymentMethod === 'cash') ? 'unpaid' : 'paid';
-
-                // We store 'method' as the paymentMethod for display consistency
-                // If state has items, use it. OTHERWISE fetch from API.
-                if (items.length > 0) {
-                    setOrderData({
-                        id,
-                        items,
-                        method: paymentMethod,
-                        date,
-                        meta: parsed.meta || {},
-                        status,
-                        transactionCode: parsed.transactionCode
-                    });
-                    return;
+            try {
+                if (raw) {
+                    parsed = JSON.parse(decodeURIComponent(raw));
+                } else {
+                    const saved = localStorage.getItem('order_state_v1');
+                    if (saved) parsed = JSON.parse(saved);
                 }
-                // If items empty, let it fall through to API fetch below
-                // But we can extract the ID from parsed state to help the fetch
-                if (parsed.transactionCode || parsed.id) {
-                    const codeToFetch = parsed.transactionCode || parsed.id;
-                    getOrderByTransactionCode(codeToFetch).then(res => {
-                        if (res.success && res.data) {
-                            const order = res.data;
-                            setOrderData({
-                                id: order.id,
-                                items: order.items.map(i => ({
-                                    name: i.product.name,
-                                    price: i.priceSnapshot,
-                                    qty: i.quantity,
-                                    image: ''
-                                })),
-                                method: order.paymentMethod || 'QRIS',
-                                date: order.createdAt,
-                                meta: {},
-                                status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
-                                transactionCode: order.transactionCode
-                            });
-                        }
-                    }).catch(e => console.error(e));
-                    return; // Don't run fallback below
+
+                if (parsed) {
+                    const items = Array.isArray(parsed.items) ? parsed.items : [];
+                    const paymentMethod = parsed.method || 'QRIS';
+                    const id = parsed.id || `MP${Date.now()}`;
+                    const date = parsed.date || new Date().toISOString();
+                    const status = (paymentMethod === 'cash') ? 'unpaid' : 'paid';
+
+                    if (items.length > 0) {
+                        setOrderData(prev => ({
+                            ...prev,
+                            id, items, method: paymentMethod, date, meta: parsed.meta || {}, status, transactionCode: parsed.transactionCode, storeName: parsed.storeName || ''
+                        }));
+                        return; // Done if items exist
+                    }
+
+                    if (parsed.transactionCode || parsed.id) {
+                        const codeToFetch = parsed.transactionCode || parsed.id;
+                        fetchOrderByCode(codeToFetch);
+                        return;
+                    }
                 }
+            } catch (e) {
+                console.error("Parse error", e);
             }
-        } catch (e) {
-            // ignore parse errors
-        }
 
-        // --- FALLBACK: FETCH FROM API IF URL STATE FAILED OR INCOMPLETE ---
-        const params = new URLSearchParams(window.location.search);
-        // Try getting ID from query param directly if state parsing failed
-        const fallbackId = params.get('orderId') || params.get('id');
+            // Fallback: Fetch by ID param
+            const fallbackId = params.get('orderId') || params.get('id');
+            if (fallbackId) {
+                fetchOrderByCode(fallbackId);
+            } else if (!parsed) {
+                // Nothing found
+                setOrderData(prev => ({ ...prev, id: `MP${Date.now()}`, date: new Date().toISOString(), transactionCode: '-' }));
+            }
+        };
 
-        if (fallbackId) {
-            getOrderByTransactionCode(fallbackId).then(res => {
+        const fetchOrderByCode = (code) => {
+            getOrderByTransactionCode(code).then(res => {
                 if (res.success && res.data) {
                     const order = res.data;
                     setOrderData({
@@ -90,26 +67,50 @@ export default function ReceiptPage() {
                             name: i.product.name,
                             price: i.priceSnapshot,
                             qty: i.quantity,
-                            image: '' // url not critical here
+                            image: ''
                         })),
                         method: order.paymentMethod || 'QRIS',
                         date: order.createdAt,
                         meta: {},
                         status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
-                        transactionCode: order.transactionCode
+                        transactionCode: order.transactionCode,
+                        storeName: order.store?.name || ''
                     });
                 }
             }).catch(e => console.error(e));
-        } else {
-            // Only use dummy if NO ID found at all
-            setOrderData({ id: `MP${Date.now()}`, items: [], method: 'QRIS', date: new Date().toISOString(), meta: {}, status: 'paid', transactionCode: '-' });
-        }
+        };
+
+        parseOrderState();
+
+        // --- 2. Fetch Store Name (Independent Logic) ---
+        // Try to get store name from local storage if orderData didn't have it
+        const fetchStoreName = async () => {
+            try {
+                const storedTable = localStorage.getItem('customer_table');
+                if (storedTable) {
+                    const parsedTable = JSON.parse(storedTable);
+                    const storeId = parsedTable.location?.storeId;
+
+                    if (storeId) {
+                        const storeRes = await getStore(storeId);
+                        if (storeRes && storeRes.success && storeRes.data) {
+                            setOrderData(prev => ({ ...prev, storeName: storeRes.data.name }));
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Store fetch error", e);
+            }
+        };
+
+        // Ensure we try to fetch store name if it's missing
+        fetchStoreName();
+
     }, []);
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
 
     const total = (orderData.items || []).reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
-
     const orderDate = orderData.date ? new Date(orderData.date) : new Date();
     const formattedDate = orderDate.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -128,61 +129,78 @@ export default function ReceiptPage() {
             --yellow-btn: #F0C419;
         }
         * { margin:0; padding:0; box-sizing:border-box; font-family:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
-        body { margin:0; background:#FFFFFF; }
+        body { margin:0; background:var(--bg-page); }
 
-        .receipt-page-wrapper { display:flex; justify-content:center; background:#FFFFFF; min-height:100vh; padding-bottom:20px; }
-        .app { width:100%; max-width:414px; min-height:100vh; padding:60px 0 20px; background:#FFFFFF; position:relative; }
+        .receipt-page-wrapper { display:flex; justify-content:center; background:var(--bg-page); min-height:100vh; padding-bottom:120px; }
+        .app { width:100%; max-width:480px; min-height:100vh; padding:80px 0 20px; background:var(--bg-page); position:relative; }
 
-        .top-bar { position:absolute; top:17px; left:0; right:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-        .top-back { position:absolute; left:12px; width:32px; height:32px; border-radius:999px; display:flex; align-items:center; justify-content:center; cursor:pointer; pointer-events:auto; }
-        .top-back img { width:20px; height:20px; object-fit:contain; display:block; }
-        .top-title { font-size:18px; font-weight:600; color:#1F2937; }
+        /* Floating Header (New) */
+        .top-bar { 
+            position:fixed; top:0; left:50%; transform:translateX(-50%); 
+            width:100%; max-width:480px; height:60px;
+            display:flex; align-items:center; justify-content:center; 
+            background: rgba(243, 244, 246, 0.95); /* Semi-transparent matching bg */
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            z-index: 50; 
+        }
+        .top-title { font-size:18px; font-weight:700; color:#1F2937; }
 
-        .page-body { margin-top:40px; background:var(--bg-page); padding-bottom:96px; }
-        .receipt-shell { padding:32px 20px 0; }
-        .receipt-card { width:100%; max-width:335px; margin:0 auto; background:var(--bg-card); border-radius:24px 24px 0 0; box-shadow:0 25px 50px rgba(0,0,0,0.25); overflow:hidden; }
+        .page-body { margin-top:10px; background:var(--bg-page); }
+        .receipt-shell { padding:0 24px; }
+        .receipt-card { width:100%; background:var(--bg-card); border-radius:24px; box-shadow:0 10px 30px rgba(0,0,0,0.08); overflow:hidden; margin-bottom: 24px; }
 
-        .receipt-header { background:var(--bg-header); padding:40px 24px 24px; text-align:center; position:relative; }
-        .receipt-header-icon { width:80px; height:80px; border-radius:999px; background:#FFFFFF; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .receipt-header { background:var(--bg-header); padding:32px 24px 24px; text-align:center; position:relative; }
+        .receipt-header-icon { width:72px; height:72px; border-radius:999px; background:#FFFFFF; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
         .receipt-header-icon img { width:60%; height:60%; object-fit:contain; display:block; }
-        .receipt-header-title { font-size:24px; font-weight:700; color:#FFFFFF; }
+        .receipt-header-title { font-size:20px; font-weight:700; color:#FFFFFF; }
 
-        .receipt-body { padding:32px 24px 24px; }
+        .receipt-body { padding:24px; }
         .total-block { text-align:center; margin-bottom:24px; }
         .total-label { font-size:14px; color:var(--text-sub); margin-bottom:4px; }
-        .total-value { font-size:48px; font-weight:800; color:var(--text-main); line-height:48px; }
+        .total-value { font-size:40px; font-weight:800; color:var(--text-main); line-height:1.1; }
 
         .divider { border-top:2px solid var(--border-soft); margin:12px 0 18px; }
         .divider-thin { border-top:1px solid #E5E7EB; margin:16px 0; }
 
-        .section-title { font-size:14px; font-weight:600; letter-spacing:0.35px; color:#374151; margin-bottom:8px; }
-        .line-item { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-        .line-item-name { font-size:16px; font-weight:500; color:#1F2937; }
-        .line-item-price { font-size:16px; font-weight:600; color:#1F2937; }
+        .section-title { font-size:14px; font-weight:600; letter-spacing:0.35px; color:#374151; margin-bottom:12px; }
+        .line-item { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+        .line-item-name { font-size:15px; font-weight:500; color:#1F2937; }
+        .line-item-price { font-size:15px; font-weight:600; color:#1F2937; }
 
         .info-list { margin-top:18px; }
-        .info-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:14px; }
+        .info-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:14px; }
         .info-label { color:var(--text-sub); }
         .info-value { color:#1F2937; font-weight:600; }
-        .status-pill { min-width:70px; padding:3px 10px; border-radius:999px; background:var(--accent-green-soft); text-align:center; font-size:12px; font-weight:700; color:var(--accent-green); }
+        .status-pill { min-width:80px; padding:4px 12px; border-radius:999px; background:var(--accent-green-soft); text-align:center; font-size:12px; font-weight:700; color:var(--accent-green); }
 
-        .tear-pattern { height:14px; background:linear-gradient(45deg,#F3F4F6 0%,rgba(0,0,0,0) 33%,#F3F4F6 67%,rgba(0,0,0,0) 100%); }
-        .store-footer { text-align:center; margin:20px auto 0; max-width:287px; color:var(--text-sub); font-size:12px; line-height:16px; }
-        .store-footer .store-name { font-size:14px; font-weight:600; color:#1F2937; margin-top:4px; margin-bottom:4px; }
+        .tear-pattern { height:16px; background:linear-gradient(45deg,#F3F4F6 0%,transparent 33%,#F3F4F6 67%,transparent 100%); background-size: 20px 20px; margin-top: -1px;}
+        
+        .store-footer { text-align:center; margin:24px auto 0; color:var(--text-sub); font-size:13px; line-height:1.5; opacity: 0.8; }
+        .store-footer .store-label { font-size:12px; color:var(--text-sub); margin-bottom: 2px;}
+        .store-footer .store-name { font-size:16px; font-weight:700; color:#1F2937; }
 
-        .bottom-bar { position:absolute; left:0; right:0; bottom:0; height:96px; background:linear-gradient(0deg,#F3F4F6 0%,#F3F4F6 50%,rgba(0,0,0,0) 100%); display:flex; align-items:center; justify-content:center; }
-        .track-btn { width:335px; height:56px; border-radius:16px; background:var(--yellow-btn); box-shadow:0 10px 15px rgba(0,0,0,0.10); border:none; display:flex; align-items:center; justify-content:center; gap:10px; cursor:pointer; }
-        .track-btn-icon { width:18px; height:18px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-        .track-btn-icon img { width:100%; height:100%; object-fit:contain; display:block; }
+        /* Floating Bottom Bar (Consistent) */
+        .bottom-bar { 
+            position:fixed; bottom:20px; left:50%; transform:translateX(-50%); 
+            width:calc(100% - 48px); max-width:432px;
+            z-index: 50;
+        }
+        .track-btn { 
+            width:100%; padding: 14px; 
+            border-radius:16px; background:var(--yellow-btn); 
+            box-shadow:0 10px 20px rgba(0,0,0,0.15); border:none; 
+            display:flex; align-items:center; justify-content:center; gap:10px; 
+            cursor:pointer; transition: transform 0.1s;
+        }
+        .track-btn:active { transform: scale(0.98); }
+        .track-btn-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; }
+        .track-btn-icon img { width:100%; height:100%; object-fit:contain; }
         .track-btn-text { font-size:16px; font-weight:700; color:#111827; }
       `}</style>
-
             <div className="receipt-page-wrapper">
                 <div className="app">
                     <div className="top-bar">
-                        <div className="top-back" onClick={() => router.back()} aria-label="Kembali">
-                            <img src="/assets/kembali.svg" alt="Kembali" />
-                        </div>
                         <div className="top-title">Nota Pembayaran</div>
                     </div>
 
@@ -258,21 +276,22 @@ export default function ReceiptPage() {
                                 <div className="tear-pattern" />
                             </div>
 
-                            <div className="store-footer">
-                                <div>Terima kasih telah berbelanja!</div>
-                                <div className="store-name">Warung Makan Berkah</div>
-                                <div>Jl. Raya No. 123, Jakarta</div>
-                            </div>
+                            {orderData.storeName ? (
+                                <div className="store-footer">
+                                    <div className="store-label">Terimakasih Telah Berbelanja</div>
+                                    <div className="store-name">{orderData.storeName}</div>
+                                </div>
+                            ) : null}
                         </div>
                     </div>
 
                     <div className="bottom-bar">
                         <button className="track-btn" onClick={() => {
-                            // Pass state to waiting page
                             const stateParam = encodeURIComponent(JSON.stringify({
                                 items: orderData.items,
                                 status: orderData.status,
-                                transactionCode: orderData.transactionCode // Pass legacy code
+                                transactionCode: orderData.transactionCode,
+                                storeName: orderData.storeName // Pass it if needed
                             }));
                             router.push(`/waiting?state=${stateParam}`);
                         }}>

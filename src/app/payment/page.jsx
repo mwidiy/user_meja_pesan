@@ -11,7 +11,7 @@ export default function PaymentPage() {
     const [selectedMethod, setSelectedMethod] = useState('qris');
     const [showSummary, setShowSummary] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSuccess, setIsSuccess] = useState(false);
+
 
     useEffect(() => {
         // Simulate "Network" loading for skeleton effect
@@ -78,25 +78,19 @@ export default function PaymentPage() {
 
             const response = await createOrder(payload);
 
-            // Show Success Animation
-            setIsSuccess(true);
+            const finalState = {
+                ...orderState,
+                method: selectedMethod,
+                transactionCode: response.data.transactionCode
+            };
+            const stateParam = encodeURIComponent(JSON.stringify(finalState));
+            const orderIdParam = response.data?.id ? `&orderId=${response.data.id}` : '';
 
-            // Delay redirect to let animation play
-            setTimeout(() => {
-                const finalState = {
-                    ...orderState,
-                    method: selectedMethod,
-                    transactionCode: response.data.transactionCode
-                };
-                const stateParam = encodeURIComponent(JSON.stringify(finalState));
-                const orderIdParam = response.data?.id ? `&orderId=${response.data.id}` : '';
-
-                if (selectedMethod === 'qris') {
-                    router.push(`/Qris?state=${stateParam}${orderIdParam}`);
-                } else {
-                    router.push(`/order?state=${stateParam}${orderIdParam}`);
-                }
-            }, 2000); // 2 seconds delay for animation
+            if (selectedMethod === 'qris') {
+                router.push(`/Qris?state=${stateParam}${orderIdParam}`);
+            } else {
+                router.push(`/order?state=${stateParam}${orderIdParam}`);
+            }
 
         } catch (error) {
             console.error("Payment submission failed", error);
@@ -295,43 +289,7 @@ export default function PaymentPage() {
 
             `}</style>
 
-            <AnimatePresence>
-                {isSuccess && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                        className="success-overlay"
-                        style={{
-                            position: 'fixed', inset: 0, background: '#FFFFFF', zIndex: 100,
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
-                        }}
-                    >
-                        <motion.div
-                            initial={{ scale: 0 }} animate={{ scale: 1 }}
-                            transition={{ type: 'spring', damping: 15 }}
-                            style={{
-                                width: 80, height: 80, borderRadius: '50%', background: '#10B981',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20
-                            }}
-                        >
-                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M20 6L9 17l-5-5" />
-                            </svg>
-                        </motion.div>
-                        <motion.h2
-                            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-                            style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1F2937' }}
-                        >
-                            Pembayaran Berhasil!
-                        </motion.h2>
-                        <motion.p
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
-                            style={{ color: '#6B7280', marginTop: 8 }}
-                        >
-                            Dialihkan ke halaman status...
-                        </motion.p>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+
 
             <header className="header">
                 <motion.button
@@ -401,7 +359,7 @@ export default function PaymentPage() {
                             <img src="/assets/Icon_Kasir.svg" alt="Tunai" />
                         </div>
                         <div style={{ flex: 1 }}>
-                            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>Bayar di Kasir</span>
+                            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>Cash</span>
                             <div style={{ fontSize: '0.85rem', color: 'var(--text-sec)', marginTop: 4 }}>
                                 Bayar tunai setelah pesanan siap
                             </div>
