@@ -765,7 +765,7 @@ export default function HomePixelPerfect() {
                                     {/* Image */}
                                     <div className="relative w-full aspect-[4/3.3] rounded-[18px] overflow-hidden mb-[10px] bg-[#E5E7EB]">
                                         {item.isArActive && (
-                                            <div className="absolute top-[10px] left-[10px] z-10 w-[40px] h-[18px]">
+                                            <div className="absolute top-[10px] left-[10px] z-10 w-[36px] h-[36px]">
                                                 <ArIconRGB />
                                             </div>
                                         )}

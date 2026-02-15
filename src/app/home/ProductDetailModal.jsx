@@ -93,7 +93,7 @@ export default function ProductDetailModal({ product, onClose, onChangeSelectedQ
                         <div className="detail-image-container">
                             {product.isArActive && (
                                 <div className="ar-watermark" style={{
-                                    width: '64px', height: '28px', // Adjust size for detail view
+                                    width: '64px', height: '64px', // Bigger size for detail view
                                     top: '18px', left: '18px', position: 'absolute', zIndex: 2
                                 }}>
                                     <ArIconRGB />

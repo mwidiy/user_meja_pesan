@@ -788,20 +788,30 @@ export default function TrackingPage() {
 
                     {/* QR REFUND */}
                     {(orderStatus === 'cancelled' && paymentStatus === 'paid') && (
-                        <div style={{ marginTop: 24, textAlign: 'center', padding: 20, background: '#FEF2F2', borderRadius: 16, border: '1px solid #FEE2E2' }}>
-                            <div style={{ fontSize: 16, fontWeight: 700, color: '#DC2626', marginBottom: 16 }}>Refund Dana</div>
-                            <div style={{ background: 'white', padding: 12, display: 'inline-block', borderRadius: 12 }}>
-                                <QRCode value={transactionCode} size={140} />
+                        refundStatus === 'Refunded' ? (
+                            <div style={{ marginTop: 24, textAlign: 'center', padding: 24, background: '#D1FAE5', borderRadius: 16, border: '1px solid #A7F3D0' }}>
+                                <div style={{ background: 'white', borderRadius: '50%', width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px auto', color: '#059669' }}>
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                </div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: '#065F46', marginBottom: 4 }}>Dana Telah Dikembalikan</div>
+                                <p style={{ fontSize: 14, color: '#047857', marginTop: 0 }}>Proses refund berhasil.</p>
                             </div>
-                            <p style={{ fontSize: 14, color: '#991B1B', marginTop: 12 }}>Tunjukkan ke kasir untuk refund</p>
-                        </div>
+                        ) : (
+                            <div style={{ marginTop: 24, textAlign: 'center', padding: 20, background: '#FEF2F2', borderRadius: 16, border: '1px solid #FEE2E2' }}>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: '#DC2626', marginBottom: 16 }}>Refund Dana</div>
+                                <div style={{ background: 'white', padding: 12, display: 'inline-block', borderRadius: 12 }}>
+                                    <QRCode value={transactionCode} size={140} />
+                                </div>
+                                <p style={{ fontSize: 14, color: '#991B1B', marginTop: 12 }}>Tunjukkan ke kasir untuk refund</p>
+                            </div>
+                        )
                     )}
                 </div>
             </motion.div>
 
             {/* FOOTER ACTIONS (UPSCALED) */}
             <div className="footer">
-                {paymentStatus === 'unpaid' ? (
+                {paymentStatus === 'unpaid' && orderStatus !== 'cancelled' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {/* UNPAID: 4 BUTTONS LAYOUT */}
                         <div className="footer-row">
