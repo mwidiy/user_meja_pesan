@@ -22,9 +22,28 @@ export default function TrackingPage() {
     const [cancellationStatus, setCancellationStatus] = useState(null);
     const [refundStatus, setRefundStatus] = useState(null);
     const [showCancelModal, setShowCancelModal] = useState(false);
+    const [showCancelRequestedModal, setShowCancelRequestedModal] = useState(false); // NEW: Popup Sukses Ajukan
+    const [showAutoCancelModal, setShowAutoCancelModal] = useState(false); // NEW: Popup Sukses Auto-Cancel
+    const [showCancelledByAdminModal, setShowCancelledByAdminModal] = useState(false); // NEW: Popup Dibatalkan Admin
     const [cancelReason, setCancelReason] = useState('');
-    const [selectedReason, setSelectedReason] = useState(null); // NEW STATE
+    const [selectedReason, setSelectedReason] = useState(null);
     const [isCancelling, setIsCancelling] = useState(false);
+
+    // Ref to track previous status for triggering Admin Cancel Modal
+    const prevOrderStatusRef = useRef(orderStatus);
+
+    // Effect: Detect Status Change to Cancelled (Issue 4)
+    useEffect(() => {
+        if (prevOrderStatusRef.current !== 'cancelled' && orderStatus === 'cancelled') {
+            // Trigger modal only if it wasn't an instant auto-cancel (user action)
+            // If it was Requested -> Approved, we display it.
+            // If it was Processing -> Cancelled (by Admin directly), we display it.
+            if (cancellationStatus !== 'AutoCancelled') {
+                setShowCancelledByAdminModal(true);
+            }
+        }
+        prevOrderStatusRef.current = orderStatus;
+    }, [orderStatus, cancellationStatus]);
 
     // Data Fetcher Helper
     const refreshOrderData = (code) => {
@@ -92,6 +111,11 @@ export default function TrackingPage() {
                 } else {
                     setOrdersAhead("Pesanan Selesai");
                     setEstimatedTime(null);
+                }
+
+                // 4. Set WhatsApp Number from Store Data
+                if (order.store && order.store.whatsappNumber) {
+                    setWhatsappNumber(order.store.whatsappNumber);
                 }
             }
         }).catch(err => console.error("Error refreshing data:", err));
@@ -179,18 +203,37 @@ export default function TrackingPage() {
     const total = orderItems.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
 
     // --- WHATSAPP LOGIC ---
+    const [whatsappNumber, setWhatsappNumber] = useState(null);
+    const [showNoWaModal, setShowNoWaModal] = useState(false); // New Popup State
+
+    // useEffect removed - logic moved to refreshOrderData
+
     const handleWhatsAppClick = () => {
-        const phoneNumber = "62895808953200"; // Admin Number
+        if (!whatsappNumber) {
+            setShowNoWaModal(true);
+            return;
+        }
+
         const message = `Halo Kak, saya *${customerName}* dengan Order ID *${transactionCode}*.\n\nStatus pesanan saya sekarang: *${ordersAhead}*. \nMohon informasinya ya, terima kasih! 🙏`;
-        const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+        // Ensure number format is correct (strip +, ensure 62)
+        // Check if starts with 0, replace with 62
+        let target = whatsappNumber.replace(/\D/g, '');
+        if (target.startsWith('0')) target = '62' + target.substring(1);
+
+        const url = `https://wa.me/${target}?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
     };
 
     // --- CANCELLATION HANDLER ---
     const handleCancelSubmit = async () => {
-        const finalReason = selectedReason ? selectedReason : cancelReason;
+        // Issue 3: Combine Radio + Text Reason
+        let finalReason = '';
+        if (selectedReason) finalReason += selectedReason;
+        if (cancelReason && cancelReason.trim()) {
+            finalReason += (finalReason ? ' — ' : '') + cancelReason.trim();
+        }
 
-        if (!finalReason || !finalReason.trim()) return alert("Mohon pilih atau isi alasan pembatalan");
+        if (!finalReason) return alert("Mohon pilih atau isi alasan pembatalan");
 
         setIsCancelling(true);
         try {
@@ -198,7 +241,15 @@ export default function TrackingPage() {
             if (res.success) {
                 setShowCancelModal(false);
                 refreshOrderData(transactionCode);
-                alert(res.message);
+
+                // Issue 2: Show proper popup based on status
+                if (orderStatus === 'preparing') {
+                    // Status was processing -> now Requested
+                    setShowCancelRequestedModal(true);
+                } else {
+                    // Status was pending -> Auto Cancelled
+                    setShowAutoCancelModal(true);
+                }
             } else {
                 alert(res.message);
             }
@@ -605,6 +656,32 @@ export default function TrackingPage() {
             >
                 {/* STATUS CARD */}
                 <div className="card" style={{ marginBottom: 32 }}>
+
+                    {/* Issue 2: Banner Menunggu Konfirmasi */}
+                    {cancellationStatus === 'Requested' && orderStatus !== 'cancelled' && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            style={{
+                                background: '#FFF7ED',
+                                border: '1px solid #FED7AA',
+                                color: '#C2410C',
+                                padding: '12px 16px',
+                                borderRadius: 12,
+                                marginBottom: 24,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 12,
+                                fontSize: 14,
+                                fontWeight: 600
+                            }}
+                        >
+                            <div style={{ // Pulse dot
+                                width: 8, height: 8, background: '#F97316', borderRadius: '50%', boxShadow: '0 0 0 4px #FFEDD5'
+                            }}></div>
+                            Pembatalan menunggu konfirmasi dari kasir
+                        </motion.div>
+                    )}
                     <div className="status-header">
                         <div style={{ position: 'relative', width: 160, height: 160, margin: '0 auto 24px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 
@@ -678,7 +755,7 @@ export default function TrackingPage() {
                         </div>
 
                         <h2 className="status-label">
-                            {orderStatus === 'ready' ? "Pesanan Siap!" :
+                            {orderStatus === 'ready' ? "Pesanan Diantar!" :
                                 orderStatus === 'preparing' ? "Sedang Disiapkan" :
                                     orderStatus === 'cancelled' ? "Pesanan Dibatalkan" :
                                         "Pesanan Diterima"}
@@ -725,7 +802,7 @@ export default function TrackingPage() {
                                     <div className="step-icon">
                                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
                                     </div>
-                                    <span className="step-label">Siap Saji</span>
+                                    <span className="step-label">Diantar</span>
                                 </div>
                             </div>
 
@@ -974,6 +1051,163 @@ export default function TrackingPage() {
                     </div>
                 )}
             </AnimatePresence>
-        </div>
+
+            {/* NEW MODAL: CANCEL REQUESTED (Issue 2) */}
+            <AnimatePresence>
+                {showCancelRequestedModal && (
+                    <div className="modal-overlay">
+                        <motion.div
+                            className="modal-content"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            style={{ textAlign: 'center' }}
+                        >
+                            <div style={{
+                                width: 80, height: 80, background: '#FEF3C7', borderRadius: '50%',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto'
+                            }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            </div>
+                            <h3 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 12 }}>Pengajuan Terkirim</h3>
+                            <p style={{ color: '#6B7280', marginBottom: 24, lineHeight: 1.5 }}>
+                                Permintaan pembatalanmu telah diajukan. Mohon tunggu konfirmasi dari kasir ya.
+                            </p>
+                            <button className="btn btn-primary" onClick={() => setShowCancelRequestedModal(false)}>
+                                Mengerti
+                            </button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* NEW MODAL: CANCELLED BY ADMIN (Issue 4) */}
+            <AnimatePresence>
+                {showCancelledByAdminModal && (
+                    <div className="modal-overlay">
+                        <motion.div
+                            className="modal-content"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            style={{ textAlign: 'center' }}
+                        >
+                            <div style={{ fontSize: 64, marginBottom: 16 }}>😢</div>
+                            <h3 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 12 }}>
+                                Yahh, Pesanan Dibatalkan
+                            </h3>
+                            <p style={{ color: '#6B7280', marginBottom: 24, lineHeight: 1.5 }}>
+                                Sayang sekali pesananmu dibatalkan. Jangan sedih ya, kamu masih bisa pesan menu lainnya kok!
+                            </p>
+
+                            {/* Reason Card */}
+                            {cancelReason && (
+                                <div style={{
+                                    background: '#F9FAFB', borderRadius: 12, padding: 16, marginBottom: 24,
+                                    border: '1px dashed #D1D5DB', textAlign: 'left'
+                                }}>
+                                    <span style={{ fontSize: 12, color: '#6B7280', display: 'block', marginBottom: 4 }}>Alasan dibatalkan:</span>
+                                    <span style={{ fontSize: 15, fontWeight: 600, color: '#374151' }}>{cancelReason}</span>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCancelledByAdminModal(false)}>
+                                    Tutup
+                                </button>
+                                <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => router.push('/home')}>
+                                    Pesan Lagi
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* NEW MODAL: AUTO CANCEL SUCCESS (Issue 5) */}
+            <AnimatePresence>
+                {showAutoCancelModal && (
+                    <div className="modal-overlay">
+                        <motion.div
+                            className="modal-content"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            style={{ textAlign: 'center' }}
+                        >
+                            <div style={{
+                                width: 80, height: 80, background: '#DCFCE7', borderRadius: '50%',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto'
+                            }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            </div>
+                            <h3 style={{ fontSize: 22, fontWeight: 700, color: '#111827', marginBottom: 12 }}>Pesanan Dibatalkan</h3>
+                            <p style={{ color: '#6B7280', marginBottom: 24, lineHeight: 1.5 }}>
+                                Pesananmu berhasil dibatalkan. Dana akan dikembalikan jika sudah terbayar.
+                            </p>
+                            <button className="btn btn-primary" onClick={() => setShowAutoCancelModal(false)}>
+                                Tutup
+                            </button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+            {/* WA UNAVAILABLE MODAL */}
+            {showNoWaModal && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 10000,
+                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px'
+                }}
+                    onClick={() => setShowNoWaModal(false)}
+                >
+                    <div style={{
+                        backgroundColor: 'white',
+                        borderRadius: '24px',
+                        padding: '32px 24px',
+                        maxWidth: '320px',
+                        width: '100%',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+                    }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📱❌</div>
+                        <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '12px' }}>
+                            WhatsApp Tidak Tersedia
+                        </h3>
+                        <p style={{ fontSize: '14px', color: '#6B7280', lineHeight: '1.6', marginBottom: '24px' }}>
+                            Mohon maaf, penjual belum menyediakan nomor WhatsApp untuk dihubungi.
+                        </p>
+
+                        <button
+                            onClick={() => setShowNoWaModal(false)}
+                            style={{
+                                width: '100%',
+                                padding: '14px',
+                                borderRadius: '16px',
+                                backgroundColor: '#1E3A5F', // Navy
+                                color: 'white',
+                                fontWeight: '700',
+                                fontSize: '15px',
+                                border: 'none',
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 6px rgba(30, 58, 95, 0.3)'
+                            }}
+                        >
+                            Oke, Mengerti
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div >
     );
 }

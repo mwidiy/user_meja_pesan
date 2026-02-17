@@ -11,6 +11,7 @@ export default function QrisPage() {
     const searchParams = useSearchParams();
 
     // State
+    // State
     const [amount, setAmount] = useState(0);
     const [remaining, setRemaining] = useState(300); // 5 minutes
     const [orderState, setOrderState] = useState(null);
@@ -21,6 +22,7 @@ export default function QrisPage() {
     const [loadingQr, setLoadingQr] = useState(true);
     const [error, setError] = useState(null);
     const [isPaid, setIsPaid] = useState(false);
+    const [isExpired, setIsExpired] = useState(false); // NEW STATE
 
     // 1. Initial Load & Socket Setup
     useEffect(() => {
@@ -45,7 +47,13 @@ export default function QrisPage() {
 
         // Timer
         const interval = setInterval(() => {
-            setRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+            setRemaining((prev) => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    return 0;
+                }
+                return prev - 1;
+            });
         }, 1000);
 
         // Socket.IO Listener for Webhook Updates
@@ -67,6 +75,35 @@ export default function QrisPage() {
             socket.disconnect();
         };
     }, [searchParams]);
+
+    // TIMER EXPIRY LOGIC
+    useEffect(() => {
+        if (remaining === 0 && !isPaid && !isExpired && orderId) {
+            setIsExpired(true);
+
+            // Call backend to expire
+            const expireOrder = async () => {
+                try {
+                    const API_URL = getDynamicUrl();
+                    await fetch(`${API_URL}/api/payment/expire-order`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ orderId: orderId })
+                    });
+                    console.log("Order expired on backend");
+                } catch (e) {
+                    console.error("Failed to expire order", e);
+                }
+            };
+            expireOrder();
+
+            // Auto redirect
+            setTimeout(() => {
+                const param = encodeURIComponent(JSON.stringify(orderState || {}));
+                router.push(`/payment?state=${param}`);
+            }, 3500);
+        }
+    }, [remaining, isPaid, isExpired, orderId, orderState, router]);
 
     // 2. Fetch QR Code Trigger
     useEffect(() => {
@@ -120,7 +157,7 @@ export default function QrisPage() {
 
     // 3. Polling Backup (Just in case Webhook/Socket is delayed)
     useEffect(() => {
-        if (!orderId || isPaid || !amount) return;
+        if (!orderId || isPaid || !amount || isExpired) return;
 
         const poll = setInterval(async () => {
             try {
@@ -137,10 +174,10 @@ export default function QrisPage() {
         }, 5000); // Check every 5s
 
         return () => clearInterval(poll);
-    }, [orderId, isPaid, amount]);
+    }, [orderId, isPaid, amount, isExpired]);
 
     const handleSuccess = (id) => {
-        if (isPaid) return;
+        if (isPaid || isExpired) return;
         setIsPaid(true);
         // Delay slightly for UX
         setTimeout(() => {
@@ -204,7 +241,8 @@ export default function QrisPage() {
                 @keyframes spin { to { transform:rotate(360deg); } }
 
                 .wallets { display:flex; justify-content:center; gap:12px; margin-top:24px; opacity:0.8; }
-                .wallet-icon { width:36px; height:36px; background:#F8FAFC; border-radius:10px; border:1px solid #E2E8F0; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#94A3B8; }
+                .wallet-icon { width:42px; height:42px; background:#FFF; border-radius:10px; border:1px solid #E2E8F0; display:flex; align-items:center; justify-content:center; padding: 6px; }
+                .wallet-icon img { width: 100%; height: 100%; object-fit: contain; }
             `}</style>
 
             <div className="header">
@@ -247,10 +285,10 @@ export default function QrisPage() {
                 </p>
 
                 <div className="wallets">
-                    <div className="wallet-icon">G</div>
-                    <div className="wallet-icon">O</div>
-                    <div className="wallet-icon">D</div>
-                    <div className="wallet-icon">S</div>
+                    <div className="wallet-icon"><img src="/assets/gopay.png" alt="GoPay" /></div>
+                    <div className="wallet-icon"><img src="/assets/ovo.png" alt="OVO" /></div>
+                    <div className="wallet-icon"><img src="/assets/dana.png" alt="Dana" /></div>
+                    <div className="wallet-icon"><img src="/assets/shoppe.png" alt="ShopeePay" /></div>
                 </div>
             </div>
 
@@ -287,6 +325,45 @@ export default function QrisPage() {
                             style={{ color: '#6B7280', marginTop: 8 }}
                         >
                             Terima kasih, pesananmu sedang kami siapkan!
+                        </motion.p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* FAILURE POPUP */}
+            <AnimatePresence>
+                {isExpired && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                        className="failure-overlay"
+                        style={{
+                            position: 'fixed', inset: 0, background: '#FFFFFF', zIndex: 100,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0 }} animate={{ scale: 1 }}
+                            transition={{ type: 'spring', damping: 15 }}
+                            style={{
+                                width: 80, height: 80, borderRadius: '50%', background: '#EF4444',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20
+                            }}
+                        >
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                        </motion.div>
+                        <motion.h2
+                            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                            style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1F2937' }}
+                        >
+                            Pembayaran Gagal
+                        </motion.h2>
+                        <motion.p
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                            style={{ color: '#6B7280', marginTop: 8 }}
+                        >
+                            Waktu habis. Silakan coba lagi.
                         </motion.p>
                     </motion.div>
                 )}
