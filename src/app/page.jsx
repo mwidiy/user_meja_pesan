@@ -14,19 +14,28 @@ export default function WelcomePage() {
     // --- Logic Check Table ID from URL (Silent) ---
     useEffect(() => {
         const tableId = searchParams.get('tableId');
-        if (tableId) {
+        // Security: Sanitize Table ID (Alphanumeric + dash only)
+        if (tableId && /^[a-zA-Z0-9\-_]+$/.test(tableId)) {
             const verify = async () => {
                 try {
                     const data = await getTableByQrCode(tableId);
-                    if (data && data.id) {
+                    // Security: Verify structure before storage
+                    if (data && data.id && typeof data.id === 'number') {
                         localStorage.setItem('customer_table', JSON.stringify(data));
                         // Optional: Clean URL without reload
                         const newUrl = new URL(window.location.href);
                         newUrl.searchParams.delete('tableId');
                         window.history.replaceState({}, '', newUrl);
+                    } else {
+                        if (process.env.NODE_ENV !== 'production') {
+                            console.warn('Table verification returned no valid data for:', tableId);
+                        }
                     }
                 } catch (e) {
-                    console.error("Silent table check failed", e);
+                    // Silent fail - network error or invalid ID shouldn't crash app
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.warn("Silent table check failed (network error?):", e.message);
+                    }
                 }
             };
             verify();
@@ -38,7 +47,9 @@ export default function WelcomePage() {
             alert("Silakan isi nama Anda terlebih dahulu!");
             return;
         }
-        localStorage.setItem('customerName', name);
+        // Security: Sanitize before storage
+        const safeName = name.trim().substring(0, 20).replace(/[<>]/g, "");
+        localStorage.setItem('customerName', safeName);
         router.push('/home');
     };
 
@@ -223,8 +234,13 @@ export default function WelcomePage() {
                                 id="userName"
                                 type="text"
                                 autoComplete="off"
+                                maxLength={20} // Security: Limit length (User Request)
                                 value={name}
-                                onChange={(e) => setName(e.target.value)}
+                                onChange={(e) => {
+                                    // Security: Basic Input Sanitization (Allow text, numbers, spaces, simple punctuation)
+                                    const safeVal = e.target.value.replace(/[^a-zA-Z0-9\s.,'-]/g, '');
+                                    setName(safeVal);
+                                }}
                             />
                         </div>
                     </div>

@@ -1,19 +1,28 @@
 // --- SMART CONFIGURATION ---
 // Helper untuk mendapatkan URL Dynamic secara Runtime
+// --- SECURITY: USE ENV VAR FOR API URL ---
 export const getDynamicUrl = () => {
-    if (typeof window !== 'undefined') {
-        const protocol = window.location.protocol;
-        const host = window.location.hostname;
-        return `${protocol}//${host}:3000`;
+    // 1. PRIORITAS UTAMA: Environment variable (untuk production / explicit config)
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+    // 2. FALLBACK DEVELOPMENT: Gunakan hostname dari browser + port 3000
+    //    Ini memungkinkan akses dari device lain di jaringan yang sama
+    if (typeof window !== 'undefined') {
+        const host = window.location.hostname;
+        return `${window.location.protocol}//${host}:3000`;
+    }
+
+    // 3. FALLBACK SERVER-SIDE: localhost (SSR / build time)
+    return 'http://localhost:3000';
 };
 
 export const getProducts = async (storeId) => {
     const API_URL = getDynamicUrl(); // Calculate NOW
     try {
         const query = storeId ? `?storeId=${storeId}&t=${Date.now()}` : `?t=${Date.now()}`;
-        console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products${query}`);
+        if (process.env.NODE_ENV !== 'production') console.log("🔍 [Debug] Fetching Products:", `${API_URL}/api/products${query}`);
         const res = await fetch(`${API_URL}/api/products${query}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to fetch products: ${res.statusText}`);
@@ -58,7 +67,7 @@ export const getBanners = async (storeId) => {
 export const getTableByQrCode = async (code) => {
     const API_URL = getDynamicUrl();
     try {
-        console.log("🔍 [Debug] Fetching Table Scan:", `${API_URL}/api/tables/scan/${code}`);
+        if (process.env.NODE_ENV !== 'production') console.log("🔍 [Debug] Fetching Table Scan:", `${API_URL}/api/tables/scan/${code}`);
         const res = await fetch(`${API_URL}/api/tables/scan/${code}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to verify table: ${res.statusText}`);
@@ -142,7 +151,7 @@ export const getArModelUrl = (urlOrFilename) => {
 export const createOrder = async (orderData) => {
     const API_URL = getDynamicUrl();
     try {
-        console.log("🔍 [Debug] Creating Order Payload:", JSON.stringify(orderData, null, 2));
+        if (process.env.NODE_ENV !== 'production') console.log("🔍 [Debug] Creating Order Payload:", JSON.stringify(orderData, null, 2));
         const res = await fetch(`${API_URL}/api/orders`, {
             method: 'POST',
             headers: {
@@ -165,7 +174,7 @@ export const createOrder = async (orderData) => {
 export const getOrderByTransactionCode = async (code) => {
     const API_URL = getDynamicUrl();
     try {
-        console.log("🔍 [Debug] Fetching Order by Code:", `${API_URL}/api/orders/code/${code}`);
+        if (process.env.NODE_ENV !== 'production') console.log("🔍 [Debug] Fetching Order by Code:", `${API_URL}/api/orders/code/${code}`);
         const res = await fetch(`${API_URL}/api/orders/code/${code}`, { cache: 'no-store' });
         if (!res.ok) {
             throw new Error(`Failed to fetch order: ${res.statusText}`);
@@ -180,7 +189,7 @@ export const getOrderByTransactionCode = async (code) => {
 export const getOrdersByBatch = async (codes) => {
     const API_URL = getDynamicUrl();
     try {
-        console.log("🔍 [Debug] Fetching Batch Orders:", `${API_URL}/api/orders/batch`);
+        if (process.env.NODE_ENV !== 'production') console.log("🔍 [Debug] Fetching Batch Orders:", `${API_URL}/api/orders/batch`);
         const res = await fetch(`${API_URL}/api/orders/batch`, {
             method: 'POST',
             headers: {
