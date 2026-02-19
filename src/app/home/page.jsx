@@ -20,6 +20,30 @@ export default function HomePixelPerfect() {
     const router = useRouter();
     const bannerRef = useRef(null);
 
+    // --- SECURITY: ROUTE GUARD ---
+    useEffect(() => {
+        const guardHome = () => {
+            try {
+                const stored = localStorage.getItem('customer_table');
+                const name = localStorage.getItem('customerName'); // Security: Must have name
+
+                if (!stored || !name) {
+                    if (process.env.NODE_ENV !== 'production') console.warn("Access Denied: No customer table or name found");
+                    router.replace('/'); // Redirect to Landing Page
+                    return;
+                }
+                const parsed = JSON.parse(stored);
+                if (!parsed || !parsed.id) {
+                    router.replace('/');
+                    return;
+                }
+            } catch (e) {
+                router.replace('/');
+            }
+        };
+        guardHome();
+    }, []);
+
     // --- STATE ---
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -236,11 +260,12 @@ export default function HomePixelPerfect() {
 
     // --- SOCKET.IO LISTENER ---
     const updateTimeoutRef = useRef(null);
+    const socketEventCountRef = useRef(0);
 
     useEffect(() => {
         // Initialize Socket.io with Dynamic URL
         const socketUrl = getDynamicUrl();
-        console.log("🔌 Socket connecting to:", socketUrl);
+        if (process.env.NODE_ENV !== 'production') console.log("🔌 Socket connecting to:", socketUrl);
 
         const socket = io(socketUrl, {
             transports: ['websocket'],
@@ -248,10 +273,15 @@ export default function HomePixelPerfect() {
         });
 
         const handleUpdate = (type) => {
+            // Security: Rate limit socket events (max 20 per minute)
+            socketEventCountRef.current++;
+            if (socketEventCountRef.current > 20) return;
+            setTimeout(() => { socketEventCountRef.current = Math.max(0, socketEventCountRef.current - 1); }, 60000);
+
             if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
 
             updateTimeoutRef.current = setTimeout(() => {
-                console.log(`🔄 Socket event: ${type} received. Debounced Refetching...`);
+                if (process.env.NODE_ENV !== 'production') console.log(`🔄 Socket event: ${type} received.`);
                 // Fetch both to ensure consistency, efficient enough for small data
                 // Pass true for isSilent to avoid full page loading spinner
                 fetchDataProducts(null, true);
@@ -276,7 +306,20 @@ export default function HomePixelPerfect() {
     useEffect(() => {
         try {
             const raw = localStorage.getItem('cart_v1');
-            if (raw) setCart(JSON.parse(raw));
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                // Security: Validate cart structure
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    const safeCart = {};
+                    for (const [key, val] of Object.entries(parsed)) {
+                        // Only allow numeric keys with numeric values
+                        if (/^\d+$/.test(key) && typeof val === 'number' && val > 0 && val <= 99) {
+                            safeCart[key] = val;
+                        }
+                    }
+                    setCart(safeCart);
+                }
+            }
         } catch (e) { /* ignore */ }
     }, []);
 
@@ -301,10 +344,14 @@ export default function HomePixelPerfect() {
         try {
             const stored = localStorage.getItem('customer_table');
             if (stored) {
-                setCustomerTable(JSON.parse(stored));
+                const parsed = JSON.parse(stored);
+                // Security: Validate table data structure
+                if (parsed && typeof parsed === 'object' && parsed.id && typeof parsed.name === 'string') {
+                    setCustomerTable(parsed);
+                }
             }
         } catch (error) {
-            console.error('Gagal memuat info meja:', error);
+            if (process.env.NODE_ENV !== 'production') console.error('Gagal memuat info meja:', error);
         }
     }, []);
 
@@ -355,7 +402,7 @@ export default function HomePixelPerfect() {
     const filteredProducts = productList.filter((p) => {
         const matchSearch = p.name ? p.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
         // Gunakan categoryId dari backend
-        const matchCat = activeFilter === 'all' ? true : p.categoryId == activeFilter;
+        const matchCat = activeFilter === 'all' ? true : String(p.categoryId) === String(activeFilter);
         return matchSearch && matchCat;
     });
 
@@ -371,7 +418,7 @@ export default function HomePixelPerfect() {
                 delete copy[id];
                 return copy;
             }
-            return { ...prev, [id]: next };
+            return { ...prev, [id]: Math.min(next, 99) }; // CAP at 99
         });
     };
 
@@ -382,7 +429,7 @@ export default function HomePixelPerfect() {
             setCart(prev => ({ ...prev, [id]: '' }));
             return;
         }
-        const val = parseInt(raw) || 0;
+        const val = Math.min(Math.max(parseInt(raw) || 0, 0), 99); // Clamp 0-99
         setCart(prev => {
             if (val <= 0) {
                 const copy = { ...prev };
@@ -410,7 +457,7 @@ export default function HomePixelPerfect() {
         const id = selectedProduct.id;
         setCart(prev => {
             const current = prev[id] || 0;
-            const next = Math.max(0, current + delta);
+            const next = Math.min(Math.max(0, current + delta), 99);
             const copy = { ...prev };
             if (next <= 0) delete copy[id];
             else copy[id] = next;
@@ -442,7 +489,7 @@ export default function HomePixelPerfect() {
             setSelectedProduct(curr => curr ? { ...curr, selectedQty: '' } : curr);
             return;
         }
-        const num = parseInt(val) || 0;
+        const num = Math.min(Math.max(parseInt(val) || 0, 0), 99);
         setCart(prev => {
             if (num <= 0) {
                 const copy = { ...prev };
@@ -601,7 +648,12 @@ export default function HomePixelPerfect() {
                                 src={store?.logo ? getImageUrl(store.logo) : "/assets/logo.png"}
                                 alt="Logo"
                                 className="h-full w-auto object-contain"
-                                onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.innerText = store?.name || 'Resto'; }}
+                                onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    // Security: Use textContent instead of innerText, sanitize name
+                                    const safeName = (store?.name || 'Resto').replace(/[<>&"']/g, '').substring(0, 30);
+                                    e.target.parentElement.textContent = safeName;
+                                }}
                             />
                         </div>
                         <span className="font-semibold text-[0.9rem] text-[#6B7280]">
@@ -646,7 +698,15 @@ export default function HomePixelPerfect() {
                                 value={searchQuery}
                                 onFocus={handleSearchFocus}
                                 onClick={handleSearchFocus} // Backup trigger jika onFocus tidak fire
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                maxLength={20}
+                                onChange={(e) => {
+                                    // Security: Sanitize search input
+                                    const raw = e.target.value;
+                                    const safe = raw
+                                        .replace(/[<>{}()\[\]\\\/;`$'"]/g, '') // Strip dangerous chars
+                                        .substring(0, 20);                       // Hard limit
+                                    setSearchQuery(safe);
+                                }}
                                 autoFocus={isSearchMode}
                             />
                         </div>
@@ -850,18 +910,23 @@ export default function HomePixelPerfect() {
                             const items = Object.entries(cart).map(([key, qty]) => {
                                 const idNum = Number(key);
                                 const p = products.find(x => x.id === idNum);
+                                // Security: Validate qty is a reasonable number
+                                const safeQty = Math.min(Math.max(parseInt(qty) || 0, 0), 99);
                                 return {
                                     id: p?.id ?? idNum,
                                     name: p?.name ?? 'Item',
                                     price: p?.price ?? 0,
-                                    qty,
+                                    qty: safeQty,
                                     image: p?.image ?? null
                                 };
-                            }).filter(it => it.qty > 0);
+                            }).filter(it => it.qty > 0 && Number.isFinite(it.price) && it.price >= 0);
 
                             const subtotal = items.reduce((s, it) => s + (it.price || 0) * it.qty, 0);
                             const state = { items, subtotal, orderType: 'dinein' };
-                            router.push(`/checkout?state=${encodeURIComponent(JSON.stringify(state))}`);
+
+                            // Security: Use sessionStorage instead of URL for state transfer
+                            try { sessionStorage.setItem('checkout_state', JSON.stringify(state)); } catch (e) { }
+                            router.push('/checkout');
                         }}
                     >
                         <div className={`cart-badge ${totalItemsInCart > 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}>

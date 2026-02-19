@@ -21,6 +21,12 @@ export default function WelcomePage() {
                     const data = await getTableByQrCode(tableId);
                     // Security: Verify structure before storage
                     if (data && data.id && typeof data.id === 'number') {
+                        // Check if table is active
+                        if (data.isActive === false) {
+                            router.push('/close');
+                            return;
+                        }
+
                         localStorage.setItem('customer_table', JSON.stringify(data));
                         // Optional: Clean URL without reload
                         const newUrl = new URL(window.location.href);

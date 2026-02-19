@@ -18,6 +18,10 @@ export default function TrackingPage() {
     const [customerName, setCustomerName] = useState('-');
     const [estimatedTime, setEstimatedTime] = useState('-');
 
+    // --- WHATSAPP LOGIC (Moved up) ---
+    const [whatsappNumber, setWhatsappNumber] = useState(null);
+    const [showNoWaModal, setShowNoWaModal] = useState(false);
+
     // Cancellation & Refund State
     const [cancellationStatus, setCancellationStatus] = useState(null);
     const [refundStatus, setRefundStatus] = useState(null);
@@ -39,7 +43,7 @@ export default function TrackingPage() {
             // If it was Requested -> Approved, we display it.
             // If it was Processing -> Cancelled (by Admin directly), we display it.
             if (cancellationStatus !== 'AutoCancelled') {
-                setShowCancelledByAdminModal(true);
+                setTimeout(() => setShowCancelledByAdminModal(true), 0);
             }
         }
         prevOrderStatusRef.current = orderStatus;
@@ -57,14 +61,17 @@ export default function TrackingPage() {
                     const currentHistory = JSON.parse(localStorage.getItem('order_history') || '[]');
                     if (order.transactionCode && !currentHistory.includes(order.transactionCode)) {
                         currentHistory.push(order.transactionCode);
+                        // Security: Cap history size
+                        if (currentHistory.length > 50) currentHistory.shift();
                         localStorage.setItem('order_history', JSON.stringify(currentHistory));
                     }
-                } catch (e) { console.error("History save error:", e); }
+                } catch (e) { if (process.env.NODE_ENV !== 'production') console.error("History save error:", e); }
 
                 // 1. Sync State
                 if (order.items && order.items.length > 0) {
                     const mappedItems = order.items.map(item => ({
-                        name: item.product.name,
+                        // Security: Sanitize item name
+                        name: item.product.name ? String(item.product.name).replace(/[<>&"']/g, '') : 'Item',
                         price: item.priceSnapshot,
                         qty: item.quantity,
                         image: item.product.image ? getImageUrl(item.product.image) : ''
@@ -72,7 +79,8 @@ export default function TrackingPage() {
                     setOrderItems(mappedItems);
                 }
                 setPaymentStatus(order.paymentStatus === 'Paid' ? 'paid' : 'unpaid');
-                if (order.customerName) setCustomerName(order.customerName);
+                // Security: Sanitize customer name
+                if (order.customerName) setCustomerName(String(order.customerName).substring(0, 30).replace(/[<>&"']/g, ''));
 
                 // Map Backend Status to Frontend Stepper
                 let mappedStatus = 'received';
@@ -84,7 +92,8 @@ export default function TrackingPage() {
                 setCancellationStatus(order.cancellationStatus);
                 setRefundStatus(order.refundStatus);
                 if (order.cancellationReason) {
-                    setCancelReason(order.cancellationReason);
+                    // Security: Sanitize cancel reason
+                    setCancelReason(String(order.cancellationReason).substring(0, 200).replace(/[<>&"']/g, ''));
                 }
 
                 // 3. SMART QUEUE 4.0 LOGIC
@@ -115,54 +124,82 @@ export default function TrackingPage() {
 
                 // 4. Set WhatsApp Number from Store Data
                 if (order.store && order.store.whatsappNumber) {
-                    setWhatsappNumber(order.store.whatsappNumber);
+                    // Security: Validate WhatsApp number format
+                    const wa = String(order.store.whatsappNumber).replace(/\D/g, '');
+                    if (wa.length >= 8 && wa.length <= 15) setWhatsappNumber(wa);
                 }
             }
-        }).catch(err => console.error("Error refreshing data:", err));
+        }).catch(err => { if (process.env.NODE_ENV !== 'production') console.error("Error refreshing data:", err); });
     };
 
     useEffect(() => {
         let currentCode = null;
+        // Security: Declare parsed variable properly
+        let parsed = null;
 
         // 1. Initial Load from URL or LocalStorage
         try {
             const params = new URLSearchParams(window.location.search);
-            const raw = params.get('state');
-            let parsed = null;
-            if (raw) parsed = JSON.parse(decodeURIComponent(raw));
-            else {
-                const saved = localStorage.getItem('order_state_v1');
-                if (saved) parsed = JSON.parse(saved);
+            // Security: Read from sessionStorage
+            const sessionRaw = sessionStorage.getItem('waiting_state');
+
+            // --- SECURITY: ROUTE GUARD PRE-CHECK ---
+            const hasParam = params.get('orderId') || params.get('id') || params.get('transactionCode') || params.get('state');
+            const hasSession = !!sessionRaw;
+            const hasLocalHistory = !!localStorage.getItem('order_history'); // Allow generic access if history exists? Maybe redirect to list?
+            // For now, strict: must have specific order reference
+
+            if (!hasParam && !hasSession && !hasLocalHistory) {
+                // router.replace('/home'); // Too strict if we want to show empty state or history?
+                // Let's rely on the parsing logic. If parsing fails to find ANY code, we redirect.
+            }
+
+            // ... Logic continues below ...
+
+            if (sessionRaw) {
+                parsed = JSON.parse(sessionRaw);
+                // Note: We do NOT delete it here, to allow page refresh to work (sessionStorage survives refresh)
+            } else {
+                // Security: Validate URL param
+                const raw = params.get('state');
+                if (raw) parsed = JSON.parse(decodeURIComponent(raw));
+                else {
+                    const saved = localStorage.getItem('order_state_v1');
+                    if (saved) parsed = JSON.parse(saved);
+                }
             }
 
             if (parsed) {
-                if (parsed.items) setOrderItems(parsed.items);
-                if (parsed.queueNumber) setQueueNumber(parsed.queueNumber);
+                // Security: Sanitize all parsed fields
+                if (parsed.items && Array.isArray(parsed.items)) {
+                    const safeItems = parsed.items.map(it => ({
+                        ...it,
+                        name: it.name ? String(it.name).replace(/[<>&"']/g, '') : 'Item'
+                    }));
+                    setTimeout(() => setOrderItems(safeItems), 0);
+                }
+                if (parsed.queueNumber) setTimeout(() => setQueueNumber(String(parsed.queueNumber).substring(0, 10).replace(/[^0-9\-]/g, '')), 0);
+
                 if (parsed.transactionCode) {
-                    currentCode = parsed.transactionCode;
+                    currentCode = String(parsed.transactionCode).substring(0, 50).replace(/[^a-zA-Z0-9\-_]/g, '');
                 }
             }
 
             // --- FALLBACK: DIRECT PARAMETER ---
             if (!currentCode) {
                 const directId = params.get('orderId') || params.get('id') || params.get('transactionCode');
-                if (directId) currentCode = directId;
+                if (directId) currentCode = String(directId).substring(0, 50).replace(/[^a-zA-Z0-9\-_]/g, '');
             }
 
             if (currentCode) {
-                setTransactionCode(currentCode);
+                setTimeout(() => setTransactionCode(currentCode), 0);
                 refreshOrderData(currentCode);
             } else {
-                // Only set dummy if NO code found
-                if (!parsed) {
-                    setOrderItems([
-                        { name: 'Ice Coffee Palm Sugar', price: 18000, qty: 1, image: '' },
-                        { name: 'Croissant Butter', price: 25000, qty: 2, image: '' }
-                    ]);
-                }
+                // Security: If no code found at all, redirect to home
+                router.replace('/home');
             }
         } catch (e) {
-            console.error("Error parsing state:", e);
+            if (process.env.NODE_ENV !== 'production') console.error("Error parsing state:", e);
         }
 
         // 2. Socket Setup
@@ -175,7 +212,8 @@ export default function TrackingPage() {
                 try {
                     const parsed = JSON.parse(storedTable);
                     const sid = parsed.location?.storeId;
-                    if (sid) {
+                    // Security: Validate storeId
+                    if (sid && !isNaN(sid) && Number(sid) > 0) {
                         socket.emit('join_store', sid);
                     }
                 } catch (e) { }
@@ -183,7 +221,7 @@ export default function TrackingPage() {
         });
 
         socket.on('order_status_updated', (updatedOrder) => {
-            console.log('🔔 Order Update Event:', updatedOrder);
+            if (process.env.NODE_ENV !== 'production') console.log('🔔 Order Update Event:', updatedOrder);
             if (currentCode) {
                 refreshOrderData(currentCode);
             }
@@ -202,9 +240,9 @@ export default function TrackingPage() {
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
     const total = orderItems.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
 
-    // --- WHATSAPP LOGIC ---
-    const [whatsappNumber, setWhatsappNumber] = useState(null);
-    const [showNoWaModal, setShowNoWaModal] = useState(false); // New Popup State
+    // Moved to top
+    // const [whatsappNumber, setWhatsappNumber] = useState(null);
+    // const [showNoWaModal, setShowNoWaModal] = useState(false);
 
     // useEffect removed - logic moved to refreshOrderData
 
@@ -902,8 +940,9 @@ export default function TrackingPage() {
                         <div className="footer-row">
                             <button className="btn btn-secondary" onClick={() => setShowCancelModal(true)} style={{ color: '#DC2626', borderColor: '#FECACA', flex: 1 }}>Batal</button>
                             <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => {
-                                const stateParam = encodeURIComponent(JSON.stringify({ items: orderItems, subtotal: total, transactionCode: transactionCode }));
-                                router.push(`/Kasir?state=${stateParam}`);
+                                // Security: Use sessionStorage instead of URL for redirect
+                                sessionStorage.setItem('kasir_state', JSON.stringify({ items: orderItems, subtotal: total, transactionCode: transactionCode }));
+                                router.push('/Kasir');
                             }}>Bayar Sekarang</button>
                         </div>
                     </div>
@@ -1026,7 +1065,8 @@ export default function TrackingPage() {
                                     className="cancel-textarea"
                                     placeholder="Tulis alasanmu..."
                                     value={cancelReason}
-                                    onChange={(e) => setCancelReason(e.target.value)}
+                                    maxLength={200}
+                                    onChange={(e) => setCancelReason(e.target.value)} // Sanitization happens on render, but good to have length limit input
                                     rows={3}
                                 />
                             </div>

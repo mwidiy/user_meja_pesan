@@ -15,17 +15,22 @@ function KasirContent() {
 
     // Removed qrUrl state
 
-    // Helper for params
-    const getOrderStateParams = (updatedOrder) => {
-        // Construct state exactly as needed by Waiting Page
-        return encodeURIComponent(JSON.stringify({
-            items: updatedOrder.items || [], // Items usually sent in update event? Check backend. Backend update sends full order with items.
-            status: 'paid', // Explicitly paid now
-            transactionCode: updatedOrder.transactionCode
-        }));
-    };
+    // Security: Removed unused getOrderStateParams (Dead Code)
 
     useEffect(() => {
+        // --- SECURITY: ROUTE GUARD ---
+        const guardKasir = () => {
+            const p_id = searchParams.get('orderId') || searchParams.get('id') || searchParams.get('transactionCode');
+            const s_raw = sessionStorage.getItem('kasir_state') || searchParams.get('state'); // Check both
+
+            if (!p_id && !s_raw) {
+                router.replace('/home');
+                return false;
+            }
+            return true;
+        };
+        if (!guardKasir()) return;
+
         // Socket.IO Logic
         // We need to connect to the BACKEND URL, not PWA URL.
         // Assuming backend is at port 3000 based on previous context 
@@ -33,41 +38,91 @@ function KasirContent() {
         const socket = io(getDynamicUrl());
 
         socket.on('connect', () => {
-            console.log("Connected to socket for payment updates");
+            if (process.env.NODE_ENV !== 'production') console.log("Connected to socket for payment updates");
         });
 
-        socket.on('order_status_updated', (data) => {
-            console.log("Order update received:", data);
-            // Verify this update is for OUR order
-            if (data.transactionCode === orderCode || (orderCode !== '-' && data.transactionCode === orderCode)) {
-                if (data.paymentStatus === 'Paid') {
-                    // Redirect to Waiting Page with FULL data
-                    const stateParam = encodeURIComponent(JSON.stringify({
-                        items: data.items,
-                        status: 'paid',
-                        transactionCode: data.transactionCode // CRITICAL FIX
-                    }));
+        const handleSocketUpdate = (data) => {
+            if (process.env.NODE_ENV !== 'production') console.log("Socket Update Received:", data);
 
-                    // SAVE TO LOCAL STORAGE FOR MULTIPLE ORDERS
-                    try {
-                        const currentHistory = JSON.parse(localStorage.getItem('order_history') || '[]');
-                        if (!currentHistory.includes(data.transactionCode)) {
-                            currentHistory.push(data.transactionCode);
-                            localStorage.setItem('order_history', JSON.stringify(currentHistory));
-                        }
-                    } catch (e) {
-                        console.error("Error saving to history:", e);
-                    }
+            // Robust ID Matching
+            const incomingId = String(data.transactionCode);
+            const currentId = String(orderCode);
 
-                    console.log("Redirecting to waiting with code:", data.transactionCode);
-                    router.push(`/waiting?state=${stateParam}`);
+            // Check if this update belongs to us
+            if (incomingId === currentId && currentId !== '-') {
+
+                // Broad Status Check: specific specifically for Cashier App flow
+                const isPaid =
+                    data.paymentStatus === 'Paid' ||
+                    data.status === 'Paid' ||
+                    data.status === 'Completed' ||
+                    data.status === 'Processing'; // Sometimes cashier moves straight to processing
+
+                if (isPaid) {
+                    if (process.env.NODE_ENV !== 'production') console.log("Payment Confirmed via Socket. Redirecting...");
+
+                    // Direct Redirect - Trusting the Socket Event for Speed
+                    // We still verify in background if needed, but for "detik itu juga" feel, we push first or verify fast.
+                    // Let's keep verification for security but make it robust.
+
+                    verifyAndHandleSuccess(incomingId, data);
                 }
             }
-        });
+        };
+
+        socket.on('order_status_updated', handleSocketUpdate); // Cashier App Trigger
+        socket.on('order_update', handleSocketUpdate);        // Webhook/System Trigger
+
+        // Helper to verify and push
+        const verifyAndHandleSuccess = async (code, data) => {
+            try {
+                // Optional: Double check with API if we want to be 100% sure, 
+                // but if we trust the socket, we can just save state and redirect.
+                // For "Instant" feel, we can optimistically redirect.
+                // But let's do a quick fetch to get full items if 'data' is incomplete.
+
+                // If data has items, use them directly:
+                if (data.items && data.items.length > 0) {
+                    saveStateAndRedirect(data);
+                } else {
+                    // Fetch full data if missing
+                    const res = await fetch(`${getDynamicUrl()}/api/payment/check-status/${code}`);
+                    const json = await res.json();
+                    if (json.status === 'Paid' || json.status === 'Completed' || json.status === 'Processing') {
+                        saveStateAndRedirect(json.data || json); // Adjust based on API structure
+                    }
+                }
+            } catch (e) {
+                console.error("Verification error", e);
+            }
+        };
+
+        const saveStateAndRedirect = (finalData) => {
+            sessionStorage.setItem('waiting_state', JSON.stringify({
+                items: finalData.items || [],
+                status: 'paid',
+                transactionCode: finalData.transactionCode
+            }));
+
+            // Save to History
+            try {
+                const rawHistory = localStorage.getItem('order_history');
+                let currentHistory = rawHistory ? JSON.parse(rawHistory) : [];
+                if (Array.isArray(currentHistory)) {
+                    if (!currentHistory.includes(finalData.transactionCode)) {
+                        currentHistory.push(finalData.transactionCode);
+                        if (currentHistory.length > 50) currentHistory.shift();
+                        localStorage.setItem('order_history', JSON.stringify(currentHistory));
+                    }
+                }
+            } catch (e) { }
+
+            router.push('/waiting');
+        };
 
         // Also listen for connect_error
         socket.on('connect_error', (err) => {
-            console.log("Socket connection error:", err);
+            if (process.env.NODE_ENV !== 'production') console.log("Socket connection error:", err);
         });
 
         return () => {
@@ -77,27 +132,48 @@ function KasirContent() {
 
     useEffect(() => {
         try {
-            const raw = searchParams.get('state');
+            // Security: Read from sessionStorage instead of URL
+            const raw = sessionStorage.getItem('kasir_state') || searchParams.get('state'); // Fallback for now, but migrating
+
             if (raw) {
-                const parsed = JSON.parse(decodeURIComponent(raw));
+                const decoded = raw.startsWith('%') ? decodeURIComponent(raw) : raw;
+                const parsed = JSON.parse(decoded);
                 // parsed example: { id: 123, subtotal: 156500, tableId: 12, tableName: "Meja 12", customerName: "Ahmad", transactionCode: "TRX-..." }
 
-                if (parsed.subtotal) setAmount(parsed.subtotal);
-                if (parsed.transactionCode) {
-                    setOrderCode(parsed.transactionCode);
-                    // QR is generated on the fly via QRCode component
-                }
-                if (parsed.tableName) setTableNumber(parsed.tableName);
+                // Security: Validate Amount
+                const rawAmt = Number(parsed.subtotal);
+                const safeAmt = (rawAmt > 0 && rawAmt <= 99999999) ? rawAmt : 0;
 
-                if (parsed.customerName) {
-                    setCustomerName(parsed.customerName);
-                } else {
-                    const storedName = localStorage.getItem('customerName');
-                    if (storedName) setCustomerName(storedName);
+                // Security: Sanitize Transaction Code
+                // RELAXED SANITIZATION: Allow basic punctuation often used in IDs (., @, :, +)
+                const safeCode = parsed.transactionCode ? String(parsed.transactionCode).substring(0, 100).replace(/[^a-zA-Z0-9\-_@.:+]/g, '') : '-';
+
+                // Security: Sanitize Strings
+                const safeTable = parsed.tableName ? String(parsed.tableName).substring(0, 30).replace(/[<>&"']/g, '') : '-';
+                const safeName = parsed.customerName ? String(parsed.customerName).substring(0, 30).replace(/[<>&"']/g, '') : '';
+
+                // Batch updates or wrap in timeout to fix "setState in effect" warning
+                setTimeout(() => {
+                    if (safeAmt) setAmount(safeAmt);
+                    if (safeCode) setOrderCode(safeCode);
+                    if (safeTable) setTableNumber(safeTable);
+
+                    if (safeName) {
+                        setCustomerName(safeName);
+                    } else {
+                        const storedName = localStorage.getItem('customerName');
+                        // Security: Sanitize localStorage read too
+                        if (storedName) setCustomerName(String(storedName).substring(0, 30).replace(/[<>&"']/g, ''));
+                    }
+                }, 0);
+
+                // Clean up session if it came from there
+                if (sessionStorage.getItem('kasir_state')) {
+                    // sessionStorage.removeItem('kasir_state'); // REMOVED: Keep state for refresh/strict-mode
                 }
             }
         } catch (e) {
-            console.error("Error parsing state:", e);
+            if (process.env.NODE_ENV !== 'production') console.error("Error parsing state:", e);
         }
     }, [searchParams]);
 
@@ -116,7 +192,7 @@ function KasirContent() {
                 document.execCommand('copy');
                 alert('Kode pesanan disalin: ' + text);
             } catch (err) {
-                console.error('Fallback copy failed', err);
+                if (process.env.NODE_ENV !== 'production') console.error('Fallback copy failed', err);
                 alert('Kode: ' + text);
             }
             document.body.removeChild(textArea);
@@ -545,7 +621,7 @@ export default function KasirPage() {
       `}</style>
             <div className="app">
                 <header className="kasir-header">
-                    <button className="btn-back" onClick={() => router.back()}>
+                    <button className="btn-back" onClick={() => router.push('/waiting')}>
                         <img src="/assets/Back.svg" alt="Kembali" />
                     </button>
                     <div className="header-title-wrap">

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getOrderByTransactionCode, getStore } from '../../services/api';
+import { getOrderByTransactionCode, getOrderById, getStore } from '../../services/api';
 
 export default function ReceiptPage() {
     const router = useRouter();
@@ -11,12 +11,17 @@ export default function ReceiptPage() {
         // --- 1. Parsing Order State / Params ---
         const parseOrderState = async () => {
             const params = new URLSearchParams(window.location.search);
-            const raw = params.get('state');
             let parsed = null;
 
             try {
+                // Security: Read from sessionStorage (order_state from QRIS, post_payment_state from Cash)
+                let raw = sessionStorage.getItem('order_state') || sessionStorage.getItem('post_payment_state');
+
                 if (raw) {
-                    parsed = JSON.parse(decodeURIComponent(raw));
+                    parsed = JSON.parse(raw);
+                    // Clean up
+                    sessionStorage.removeItem('order_state');
+                    sessionStorage.removeItem('post_payment_state');
                 } else {
                     const saved = localStorage.getItem('order_state_v1');
                     if (saved) parsed = JSON.parse(saved);
@@ -24,60 +29,139 @@ export default function ReceiptPage() {
 
                 if (parsed) {
                     const items = Array.isArray(parsed.items) ? parsed.items : [];
+
+                    // Security: Sanitize Items
+                    const safeItems = items
+                        .filter(it => it.name && typeof it.price === 'number')
+                        .map(it => ({
+                            name: String(it.name).substring(0, 50).replace(/[<>&"']/g, ''),
+                            price: Math.max(0, Number(it.price) || 0),
+                            qty: Math.min(Math.max(1, parseInt(it.qty) || 1), 99),
+                            image: ''
+                        }));
+
                     const paymentMethod = parsed.method || 'QRIS';
-                    const id = parsed.id || `MP${Date.now()}`;
+                    // Security: Whitelist payment method
+                    const VALID_METHODS = ['QRIS', 'qris', 'cash', 'Cash'];
+                    const safeMethod = VALID_METHODS.includes(paymentMethod) ? paymentMethod : 'QRIS';
+
+                    const id = parsed.id || null; // Don't use Date.now() here yet
                     const date = parsed.date || new Date().toISOString();
                     const status = (paymentMethod === 'cash') ? 'unpaid' : 'paid';
 
-                    if (items.length > 0) {
-                        setOrderData(prev => ({
-                            ...prev,
-                            id, items, method: paymentMethod, date, meta: parsed.meta || {}, status, transactionCode: parsed.transactionCode, storeName: parsed.storeName || ''
-                        }));
+                    // Security: Sanitize transaction code
+                    const safeCode = String(parsed.transactionCode || '').substring(0, 50).replace(/[^a-zA-Z0-9\-_]/g, '') || '-';
+
+                    // Security: Sanitize storeName
+                    const safeStoreName = String(parsed.storeName || '').substring(0, 50).replace(/[<>&"']/g, '');
+
+                    if (safeItems.length > 0) {
+                        setTimeout(() => {
+                            setOrderData(prev => ({
+                                ...prev,
+                                id: id || prev.id || `MP${Date.now()}`, // Fallback if needed
+                                items: safeItems,
+                                method: safeMethod,
+                                date,
+                                meta: parsed.meta || {},
+                                status,
+                                transactionCode: safeCode,
+                                storeName: safeStoreName
+                            }));
+                        }, 0);
                         return; // Done if items exist
                     }
 
                     if (parsed.transactionCode || parsed.id) {
-                        const codeToFetch = parsed.transactionCode || parsed.id;
-                        fetchOrderByCode(codeToFetch);
+                        const rawCode = parsed.transactionCode || parsed.id;
+                        // Security: Sanitize Transaction Code (Path Traversal Protection)
+                        const safeCode = String(rawCode).substring(0, 50).replace(/[^a-zA-Z0-9\-_]/g, '');
+                        if (safeCode) fetchOrderByCode(safeCode);
                         return;
                     }
                 }
             } catch (e) {
-                console.error("Parse error", e);
+                if (process.env.NODE_ENV !== 'production') console.error("Parse error", e);
             }
 
             // Fallback: Fetch by ID param
             const fallbackId = params.get('orderId') || params.get('id');
             if (fallbackId) {
-                fetchOrderByCode(fallbackId);
+                // Security: Sanitize Order ID from URL
+                // Allow alphanumeric + dashes for TransactionCode, digits for numeric ID
+                const safeId = String(fallbackId).substring(0, 50).replace(/[^a-zA-Z0-9\-_]/g, '');
+
+                if (safeId) {
+                    // Smart Fallback: Check if ID looks like a number (Internal ID) or String (TransactionCode)
+                    const isNumeric = /^\d+$/.test(safeId);
+
+                    if (isNumeric) {
+                        fetchOrderById(safeId);
+                    } else {
+                        fetchOrderByCode(safeId);
+                    }
+                }
             } else if (!parsed) {
                 // Nothing found
-                setOrderData(prev => ({ ...prev, id: `MP${Date.now()}`, date: new Date().toISOString(), transactionCode: '-' }));
+                // Nothing found
+                setTimeout(() => {
+                    setOrderData(prev => ({ ...prev, id: `MP${Date.now()}`, date: new Date().toISOString(), transactionCode: '-' }));
+                }, 0);
             }
         };
 
         const fetchOrderByCode = (code) => {
             getOrderByTransactionCode(code).then(res => {
-                if (res.success && res.data) {
+                if (res && res.success && res.data) {
                     const order = res.data;
-                    setOrderData({
-                        id: order.id,
-                        items: order.items.map(i => ({
-                            name: i.product.name,
-                            price: i.priceSnapshot,
-                            qty: i.quantity,
-                            image: ''
-                        })),
-                        method: order.paymentMethod || 'QRIS',
-                        date: order.createdAt,
-                        meta: {},
-                        status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
-                        transactionCode: order.transactionCode,
-                        storeName: order.store?.name || ''
-                    });
+                    setTimeout(() => {
+                        setOrderData({
+                            id: order.id,
+                            items: order.items.map(i => ({
+                                name: String(i.product.name || 'Item').substring(0, 50).replace(/[<>&"']/g, ''),
+                                price: i.priceSnapshot,
+                                qty: i.quantity,
+                                image: ''
+                            })),
+                            method: order.paymentMethod || 'QRIS',
+                            date: order.createdAt,
+                            meta: {},
+                            status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
+                            transactionCode: order.transactionCode,
+                            storeName: String(order.store?.name || '').substring(0, 50).replace(/[<>&"']/g, '')
+                        });
+                    }, 0);
                 }
-            }).catch(e => console.error(e));
+            }).catch(e => {
+                if (process.env.NODE_ENV !== 'production') console.error(e);
+            });
+        };
+
+        const fetchOrderById = (id) => {
+            getOrderById(id).then(res => {
+                if (res && res.success && res.data) {
+                    const order = res.data;
+                    setTimeout(() => {
+                        setOrderData({
+                            id: order.id,
+                            items: order.items.map(i => ({
+                                name: String(i.product.name || 'Item').substring(0, 50).replace(/[<>&"']/g, ''),
+                                price: i.priceSnapshot, // Note: backend doesn't seem to store price snapshot in items directly based on controller, but let's assume it does or product.price
+                                qty: i.quantity,
+                                image: ''
+                            })),
+                            method: order.paymentMethod || 'QRIS',
+                            date: order.createdAt,
+                            meta: {},
+                            status: order.paymentStatus === 'Paid' ? 'paid' : 'unpaid',
+                            transactionCode: order.transactionCode,
+                            storeName: String(order.store?.name || '').substring(0, 50).replace(/[<>&"']/g, '')
+                        });
+                    }, 0);
+                }
+            }).catch(e => {
+                if (process.env.NODE_ENV !== 'production') console.error(e);
+            });
         };
 
         parseOrderState();
@@ -89,17 +173,23 @@ export default function ReceiptPage() {
                 const storedTable = localStorage.getItem('customer_table');
                 if (storedTable) {
                     const parsedTable = JSON.parse(storedTable);
-                    const storeId = parsedTable.location?.storeId;
+                    const rawStoreId = parsedTable.location?.storeId;
+
+                    // Security: Validate Store ID (Integer check)
+                    const storeId = Number.isInteger(Number(rawStoreId)) && Number(rawStoreId) > 0
+                        ? Math.floor(Number(rawStoreId)) : null;
 
                     if (storeId) {
                         const storeRes = await getStore(storeId);
                         if (storeRes && storeRes.success && storeRes.data) {
-                            setOrderData(prev => ({ ...prev, storeName: storeRes.data.name }));
+                            setTimeout(() => {
+                                setOrderData(prev => ({ ...prev, storeName: storeRes.data.name }));
+                            }, 0);
                         }
                     }
                 }
             } catch (e) {
-                console.error("Store fetch error", e);
+                if (process.env.NODE_ENV !== 'production') console.error("Store fetch error", e);
             }
         };
 
@@ -251,7 +341,7 @@ export default function ReceiptPage() {
                                     <div className="info-list">
                                         <div className="info-row">
                                             <span className="info-label">Order ID</span>
-                                            <span className="info-value">{orderData.id || `MP${Date.now()}`}</span>
+                                            <span className="info-value">{orderData.id || '-'}</span>
                                         </div>
                                         <div className="info-row">
                                             <span className="info-label">Metode Pembayaran</span>
@@ -287,13 +377,14 @@ export default function ReceiptPage() {
 
                     <div className="bottom-bar">
                         <button className="track-btn" onClick={() => {
-                            const stateParam = encodeURIComponent(JSON.stringify({
+                            const trackingState = {
                                 items: orderData.items,
                                 status: orderData.status,
                                 transactionCode: orderData.transactionCode,
-                                storeName: orderData.storeName // Pass it if needed
-                            }));
-                            router.push(`/waiting?state=${stateParam}`);
+                                storeName: orderData.storeName
+                            };
+                            try { sessionStorage.setItem('waiting_state', JSON.stringify(trackingState)); } catch (e) { }
+                            router.push('/waiting');
                         }}>
                             <span className="track-btn-icon">
                                 <img src="/assets/gps.svg" alt="Lacak" />

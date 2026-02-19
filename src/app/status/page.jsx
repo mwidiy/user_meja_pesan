@@ -16,7 +16,16 @@ export default function StatusPage() {
   const fetchOrders = async () => {
     try {
       // 1. Get transaction codes from localStorage
-      const history = JSON.parse(localStorage.getItem('order_history') || '[]');
+      let history = [];
+      try {
+        const rawHistory = JSON.parse(localStorage.getItem('order_history') || '[]');
+        if (Array.isArray(rawHistory)) {
+          // Security: Validate and cap history
+          history = rawHistory.slice(0, 50).filter(code => typeof code === 'string' && /^[a-zA-Z0-9\-_]+$/.test(code));
+        }
+      } catch (e) {
+        history = [];
+      }
 
       if (history.length === 0) {
         setLoading(false);
@@ -45,7 +54,7 @@ export default function StatusPage() {
         });
       }
     } catch (error) {
-      console.error("Error fetching status:", error);
+      if (process.env.NODE_ENV !== 'production') console.error("Error fetching status:", error);
     } finally {
       setLoading(false);
     }
@@ -54,18 +63,19 @@ export default function StatusPage() {
   const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
 
   const goToWaitingPage = (order) => {
-    // Construct state param for Waiting Page
-    const stateParam = encodeURIComponent(JSON.stringify({
+    // Security: Use sessionStorage to prevent URL data leak
+    const safeOrder = {
       items: order.items.map(item => ({
-        name: item.product.name,
+        name: item.product.name ? String(item.product.name).replace(/[<>&"']/g, '') : 'Item',
         price: item.priceSnapshot,
         qty: item.quantity,
         image: item.product.image ? getImageUrl(item.product.image) : '/assets/placeholder.png'
       })),
       transactionCode: order.transactionCode,
-      queueNumber: order.queueNumber ? String(order.queueNumber) : '-'
-    }));
-    router.push(`/waiting?state=${stateParam}`);
+      queueNumber: order.queueNumber ? String(order.queueNumber).replace(/[^0-9\-]/g, '') : '-'
+    };
+    sessionStorage.setItem('waiting_state', JSON.stringify(safeOrder));
+    router.push('/waiting');
   };
 
   return (
@@ -450,7 +460,7 @@ export default function StatusPage() {
         <main className="body">
           <div className="div">
             <header className="header">
-              <button className="button" aria-label="Kembali" onClick={() => router.back()}>
+              <button className="button" aria-label="Kembali" onClick={() => router.push('/home')}>
                 <img src="/assets/kembali.svg" alt="Kembali" />
               </button>
               <h1 className="h">
@@ -484,7 +494,7 @@ export default function StatusPage() {
                           <img src="/assets/Card_Icon.svg" alt="" />
                         </span>
                         <div className="div-7">
-                          <h2 className="text-wrapper-4">Pesanan #{order.queueNumber || order.id}</h2>
+                          <h2 className="text-wrapper-4">Pesanan #{String(order.queueNumber || order.id).replace(/[^a-zA-Z0-9\-_]/g, '')}</h2>
                           {order.createdAt && (
                             <time className="text-wrapper-5">{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
                           )}
@@ -501,7 +511,7 @@ export default function StatusPage() {
 
                     <div className="p-wrapper">
                       <p className="p">
-                        {order.items.map(i => `${i.quantity}x ${i.product.name}`).join(', ')}
+                        {order.items.map(i => `${i.quantity}x ${i.product.name ? String(i.product.name).replace(/[<>&"']/g, '') : 'Item'}`).join(', ')}
                       </p>
                     </div>
 
@@ -519,7 +529,7 @@ export default function StatusPage() {
                       </div>
                       <div className="div-10">
                         <span className="text-wrapper-8">Total</span>
-                        <span className="text-wrapper-9">{formatRupiah(order.totalAmount)}</span>
+                        <span className="text-wrapper-9">{formatRupiah(Number(order.totalAmount) || 0)}</span>
                       </div>
                     </div>
                   </article>

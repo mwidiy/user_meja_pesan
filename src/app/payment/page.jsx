@@ -1,8 +1,13 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createOrder } from '../../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Skeleton Component moved outside to prevent re-creation on render
+const SkeletonLine = ({ width = "100%", height = "20px" }) => (
+    <div style={{ width, height, background: 'linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%)', backgroundSize: '200% 100%', borderRadius: '6px', animation: 'shimmer 1.5s infinite' }} />
+);
 
 export default function PaymentPage() {
     const router = useRouter();
@@ -11,29 +16,61 @@ export default function PaymentPage() {
     const [selectedMethod, setSelectedMethod] = useState('qris');
     const [showSummary, setShowSummary] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const isSubmittingRef = useRef(false); // Security: Synchronous ref for lock
 
 
     useEffect(() => {
+        // --- SECURITY: ROUTE GUARD ---
+        try {
+            const raw = sessionStorage.getItem('payment_state');
+            if (!raw) {
+                router.replace('/home'); // Guard: No Access without state
+                return;
+            }
+        } catch (e) { router.replace('/home'); return; }
+
         // Simulate "Network" loading for skeleton effect
         const timer = setTimeout(() => setIsLoading(false), 800);
 
         try {
-            const params = new URLSearchParams(window.location.search);
-            const raw = params.get('state');
+            // Security: Read from sessionStorage instead of URL
+            const raw = sessionStorage.getItem('payment_state');
             if (raw) {
-                const parsed = JSON.parse(decodeURIComponent(raw));
-                const items = Array.isArray(parsed.items) ? parsed.items : [];
+                const parsed = JSON.parse(raw);
+                // Security: Validate items & sanitize strings
+                const items = (Array.isArray(parsed.items) ? parsed.items : [])
+                    .filter(it => it.id && typeof it.price === 'number' && it.price >= 0)
+                    .map(it => ({
+                        ...it,
+                        qty: Math.min(Math.max(parseInt(it.qty) || 0, 0), 99),
+                        price: Math.max(0, Number(it.price) || 0),
+                        name: String(it.name || 'Item').substring(0, 50).replace(/[<>&"']/g, ''),
+                    }));
+
                 const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
 
-                // Extract extra fields
+                // Extract extra fields with sanitization
                 const orderType = parsed.orderType || 'dinein';
-                const location = parsed.location || '';
-                const notes = parsed.notes || '';
+                const location = String(parsed.location || '').substring(0, 100).replace(/[<>]/g, '');
+                const notes = String(parsed.notes || '').substring(0, 100).replace(/[<>{}]/g, ''); // Stricter sanitization
 
-                setOrderState({ items, subtotal, orderType, location, notes });
+                // Security: Whitelist orderType
+                const VALID_ORDER_TYPES = ['dinein', 'takeaway', 'delivery'];
+                const safeOrderType = VALID_ORDER_TYPES.includes(orderType) ? orderType : 'dinein';
+
+                // Security: Client-side recalculation of subtotal (never trust passed subtotal)
+                const safeSubtotal = items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
+
+                // Fix: Wrap state update in setTimeout to avoid "setState during render" warning/error
+                setTimeout(() => {
+                    setOrderState({ items, subtotal: safeSubtotal, orderType: safeOrderType, location, notes });
+                }, 0);
+
+                // Clean up
+                // sessionStorage.removeItem('payment_state'); // REMOVED: Keep state for refresh/strict-mode
             }
         } catch (e) {
-            console.error("State parsing error", e);
+            if (process.env.NODE_ENV !== 'production') console.error("State parsing error", e);
         }
         return () => clearTimeout(timer);
     }, []);
@@ -41,21 +78,45 @@ export default function PaymentPage() {
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
 
     const handlePay = async () => {
-        if (isSubmitting) return;
+        if (isSubmittingRef.current) return;
+
+        // Security: Guard against empty cart
+        if (!orderState.items || orderState.items.length === 0) {
+            alert("Keranjang kosong. Silakan pilih menu terlebih dahulu.");
+            router.push('/home'); // Redirect to home
+            return;
+        }
+
+        // Security: Whitelist payment method
+        const VALID_METHODS = ['qris', 'cash'];
+        if (!VALID_METHODS.includes(selectedMethod)) {
+            alert("Metode pembayaran tidak valid.");
+            return;
+        }
+
+        isSubmittingRef.current = true;
         setIsSubmitting(true);
 
         try {
             const storedName = localStorage.getItem('customerName');
             const storedTable = localStorage.getItem('customer_table');
-            const finalName = (storedName && storedName.trim()) ? storedName : "Pelanggan Tanpa Nama";
+
+            // Security: Sanitize customerName (Max 20 chars, no special chars)
+            const finalName = (storedName && storedName.trim())
+                ? String(storedName).substring(0, 20).replace(/[<>{}\[\]\\;`$'"]/g, '').trim() || "Pelanggan Tanpa Nama"
+                : "Pelanggan Tanpa Nama";
+
             let finalTableId = null;
             let finalStoreId = orderState.storeId || null;
 
             if (storedTable) {
                 try {
                     const parsedTable = JSON.parse(storedTable);
-                    if (parsedTable?.id) finalTableId = parseInt(parsedTable.id, 10);
-                    if (!finalStoreId && parsedTable?.location?.storeId) finalStoreId = parsedTable.location.storeId;
+                    // Security: Validate IDs are positive integers
+                    if (parsedTable?.id) finalTableId = Math.max(0, parseInt(parsedTable.id, 10)) || null;
+                    if (!finalStoreId && parsedTable?.location?.storeId) {
+                        finalStoreId = Math.max(0, parseInt(parsedTable.location.storeId, 10)) || null;
+                    }
                 } catch (e) { /* ignore */ }
             }
 
@@ -81,34 +142,37 @@ export default function PaymentPage() {
             const finalState = {
                 ...orderState,
                 method: selectedMethod,
-                transactionCode: response.data.transactionCode
+                transactionCode: response.data.transactionCode,
+                orderId: response.data.id
             };
-            const stateParam = encodeURIComponent(JSON.stringify(finalState));
-            const orderIdParam = response.data?.id ? `&orderId=${response.data.id}` : '';
+
+            // Security: Use sessionStorage instead of URL
+            try { sessionStorage.setItem('post_payment_state', JSON.stringify(finalState)); } catch (e) { }
+
+            const orderIdParam = response.data?.id ? `?orderId=${response.data.id}` : '';
 
             if (selectedMethod === 'qris') {
-                router.push(`/Qris?state=${stateParam}${orderIdParam}`);
+                router.push(`/Qris${orderIdParam}`);
             } else {
-                router.push(`/order?state=${stateParam}${orderIdParam}`);
+                router.push(`/order${orderIdParam}`);
             }
 
         } catch (error) {
-            console.error("Payment submission failed", error);
-            alert("Gagal memproses pesanan: " + (error.message || 'Error'));
+            if (process.env.NODE_ENV !== 'production') console.error("Payment submission failed", error);
+            // Security: Generic error message to user
+            alert("Gagal memproses pesanan. Silakan coba lagi.");
             setIsSubmitting(false);
+            isSubmittingRef.current = false;
         }
     };
 
     const handleBack = () => {
-        const stateParam = encodeURIComponent(JSON.stringify(orderState));
-        const target = orderState.items.length ? `/checkout?state=${stateParam}` : '/checkout';
-        router.push(target);
+        // Security: Use sessionStorage to pass state back
+        if (orderState.items.length) {
+            try { sessionStorage.setItem('checkout_state', JSON.stringify(orderState)); } catch (e) { }
+        }
+        router.push('/checkout');
     };
-
-    // Skeleton Component
-    const SkeletonLine = ({ width = "100%", height = "20px" }) => (
-        <div style={{ width, height, background: 'linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%)', backgroundSize: '200% 100%', borderRadius: '6px', animation: 'shimmer 1.5s infinite' }} />
-    );
 
     const subtotal = orderState.items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0) || orderState.subtotal || 0;
 

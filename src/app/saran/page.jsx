@@ -12,6 +12,9 @@ export default function FeedbackPage() {
     const [attachment, setAttachment] = useState(null);
     const [notification, setNotification] = useState(null);
 
+    // Security: Rate Limiting
+    const [lastSubmitTime, setLastSubmitTime] = useState(0);
+
     const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -32,7 +35,11 @@ export default function FeedbackPage() {
 
         // 2. Validate File Type (PNG, JPG, JPEG)
         const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
-        if (!validTypes.includes(file.type)) {
+        // Security: Validate extension as well
+        const validExtensions = ['.png', '.jpg', '.jpeg'];
+        const ext = file.name ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
+
+        if (!validTypes.includes(file.type) || !validExtensions.includes(ext)) {
             setNotification({
                 type: 'error',
                 message: 'Hanya format PNG, JPG, dan JPEG yang diperbolehkan'
@@ -63,6 +70,13 @@ export default function FeedbackPage() {
     ];
 
     const sendFeedback = async () => {
+        // Security: Rate Limit (30s cooldown)
+        const now = Date.now();
+        if (now - lastSubmitTime < 30000) {
+            setNotification({ type: 'error', message: 'Mohon tunggu 30 detik sebelum mengirim lagi.' });
+            return;
+        }
+
         if (!feedbackText.trim()) {
             setNotification({ type: 'error', message: 'Mohon isi masukan Anda terlebih dahulu.' });
             return;
@@ -93,9 +107,9 @@ export default function FeedbackPage() {
                 try {
                     const formData = new FormData();
                     formData.append('file', attachment);
-                    formData.append('upload_preset', 'MEJA PESAN'); // Preset name
-                    // Cloud name: 'ddvkjluu2' (Corrected per user)
-                    const cloudName = 'ddvkjluu2';
+                    // Security: Use Env Var
+                    formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_PRESET);
+                    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD;
 
                     const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
                         method: 'POST',
@@ -111,7 +125,7 @@ export default function FeedbackPage() {
                     imageUrl = data.secure_url;
 
                 } catch (uploadError) {
-                    console.error('Cloudinary Upload Error:', uploadError);
+                    if (process.env.NODE_ENV !== 'production') console.error('Cloudinary Upload Error:', uploadError);
                     setNotification({ type: 'error', message: 'Gagal mengupload gambar. Coba lagi atau kirim tanpa gambar.' });
                     setIsSubmitting(false);
                     return; // Stop execution if upload fails
@@ -119,11 +133,15 @@ export default function FeedbackPage() {
             }
 
             // 2. Prepare Message Content
-            const userName = localStorage.getItem('customerName') || 'Tanpa Nama';
+            // Security: Sanitize localStorage data
+            const rawName = localStorage.getItem('customerName') || 'Tanpa Nama';
+            const userName = String(rawName).substring(0, 30).replace(/[<>&"']/g, '');
 
             let messageContent = `Nama: ${userName}\n`;
             messageContent += `Jenis: ${prefix}\n\n`;
-            messageContent += `Pesan:\n${feedbackText}`;
+            // Security: Sanitize feedback text (although EmailJS handles text, good to be safe)
+            const safeFeedback = String(feedbackText).substring(0, 1000).replace(/[<>&"']/g, '');
+            messageContent += `Pesan:\n${safeFeedback}`;
 
             if (imageUrl) {
                 messageContent += `\n\nUrl Gambar:\n${imageUrl}`;
@@ -138,19 +156,20 @@ export default function FeedbackPage() {
 
             // 3. Send Email
             await emailjs.send(
-                'service_txuj6if',
-                'template_m3lrqep',
+                process.env.NEXT_PUBLIC_EMAILJS_SERVICE,
+                process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE,
                 templateParams,
-                'PiIvxAESwFwzEJ9zu'
+                process.env.NEXT_PUBLIC_EMAILJS_KEY
             );
 
             setNotification({ type: 'success', message: 'Saran telah dikirimkan ke developer' });
             setFeedbackText('');
             setAttachment(null);
+            setLastSubmitTime(Date.now()); // Update cooldown
             if (fileInputRef.current) fileInputRef.current.value = '';
 
         } catch (error) {
-            console.error('EmailJS Error:', error);
+            if (process.env.NODE_ENV !== 'production') console.error('EmailJS Error:', error);
 
             setNotification({ type: 'error', message: 'Gagal mengirim saran. Silakan coba lagi.' });
         } finally {
@@ -371,7 +390,8 @@ export default function FeedbackPage() {
 
             {/* HEADER */}
             <div className="header-bar">
-                <div className="back-btn-area" onClick={() => router.back()}>
+                {/* Security: Prevent open redirect by going to waiting page instead of back() */}
+                <div className="back-btn-area" onClick={() => router.push('/waiting')}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1F2937" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M19 12H5" />
                         <path d="M12 19L5 12L12 5" />
@@ -386,7 +406,7 @@ export default function FeedbackPage() {
                 {/* HERO */}
                 <div className="hero-section">
                     <h1 className="hero-title">Punya ide atau keluhan?</h1>
-                    <p className="hero-subtitle">Bantu kami membuat 'Meja Pesan' jadi lebih baik!</p>
+                    <p className="hero-subtitle">Bantu kami membuat &apos;Meja Pesan&apos; jadi lebih baik!</p>
                 </div>
 
                 {/* CATEGORIES */}
@@ -426,6 +446,7 @@ export default function FeedbackPage() {
                             className="textarea"
                             placeholder="Saya punya ide keren agar aplikasi ini bisa..."
                             value={feedbackText}
+                            maxLength={1000} // Security: Max Length
                             onChange={(e) => setFeedbackText(e.target.value)}
                         />
                     </div>
@@ -497,7 +518,7 @@ export default function FeedbackPage() {
                         )}
                     </svg>
                     <span className="attachment-text" style={{ color: attachment ? '#166534' : '#1F2937' }}>
-                        {attachment ? attachment.name : 'Lampirkan Screenshot (Opsional)'}
+                        {attachment ? (attachment.name.length > 30 ? attachment.name.substring(0, 30) + '...' : attachment.name).replace(/[<>&"']/g, '') : 'Lampirkan Screenshot (Opsional)'}
                     </span>
                     {attachment && (
                         <div

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { getDynamicUrl } from '../../services/api';
@@ -23,26 +23,155 @@ export default function QrisPage() {
     const [error, setError] = useState(null);
     const [isPaid, setIsPaid] = useState(false);
     const [isExpired, setIsExpired] = useState(false); // NEW STATE
+    const successLockRef = useRef(false); // Security: Lock for handleSuccess
+    const [serverExpiry] = useState(() => Date.now() + 300000); // 5 min from load (Hard Timer)
+
+    // --- REFS FOR CALLBACKS (Prevents useEffect loops) ---
+    const handleSuccessRef = useRef();
+    const verifyAndHandleSuccessRef = useRef();
+    const numericIdRef = useRef(null); // Store numeric ID for redirect
+
+    // --- SUCCESS HANDLER (with lock to prevent double-fire) ---
+    const handleSuccess = useCallback((id) => {
+        if (successLockRef.current) return; // Prevent double execution
+        successLockRef.current = true;
+        setIsPaid(true);
+
+        // Clear backup
+        localStorage.removeItem('qris_backup');
+
+        // Store order state for /order page to consume
+        try {
+            const stateToPass = {
+                ...(orderState || {}),
+                id: numericIdRef.current || id, // Prefer numeric ID
+                method: 'QRIS',
+                transactionCode: orderState?.transactionCode || id,
+            };
+            sessionStorage.setItem('order_state', JSON.stringify(stateToPass));
+        } catch (e) { /* ignore */ }
+
+        // Redirect to order/receipt page with Numeric ID
+        setTimeout(() => {
+            const targetId = numericIdRef.current || id;
+            if (process.env.NODE_ENV !== 'production') console.log("Redirecting to order:", targetId);
+            router.push(`/order?orderId=${targetId}`);
+        }, 2000);
+    }, [orderState, router]);
+
+    // --- VERIFY BEFORE SUCCESS (Security: don't trust socket blindly) ---
+    const verifyAndHandleSuccess = useCallback(async (id) => {
+        try {
+            const API_URL = getDynamicUrl();
+            if (process.env.NODE_ENV !== 'production') console.log(`Verifying ID: ${id} with Amount: ${amount}`);
+
+            const res = await fetch(`${API_URL}/api/payment/check-status/${id}?amount=${amount}`);
+            const json = await res.json();
+
+            if (process.env.NODE_ENV !== 'production') console.log("Verify Result:", json);
+
+            if (json.status === 'Paid') {
+                handleSuccessRef.current(id);
+            }
+        } catch (e) {
+            if (process.env.NODE_ENV !== 'production') console.error("Verify error", e);
+        }
+    }, [amount]);
+
+    // Update refs on every render
+    useEffect(() => {
+        handleSuccessRef.current = handleSuccess;
+        verifyAndHandleSuccessRef.current = verifyAndHandleSuccess;
+    }, [handleSuccess, verifyAndHandleSuccess]);
+
 
     // 1. Initial Load & Socket Setup
     useEffect(() => {
-        // Parse Params
-        let idParam, amtParam;
-        try {
-            const raw = searchParams.get('state');
-            if (raw) {
-                const parsed = JSON.parse(decodeURIComponent(raw));
-                setOrderState(parsed);
-                idParam = parsed.id || parsed.transactionCode;
-                amtParam = parsed.subtotal || parsed.totalAmount;
+        // --- SECURITY: ROUTE GUARD ---
+        const guardQris = () => {
+            const p_id = searchParams.get('orderId') || searchParams.get('id');
+            const s_raw = sessionStorage.getItem('post_payment_state');
+            let s_id = null;
+            if (s_raw) {
+                try { s_id = JSON.parse(s_raw).transactionCode; } catch (e) { }
             }
-            // Fallback params
-            if (!idParam) idParam = searchParams.get('orderId');
+
+            if (!p_id && !s_id) {
+                // Check backup before redirecting (for refresh support)
+                const backup = localStorage.getItem('qris_backup');
+                if (!backup) {
+                    router.replace('/home');
+                    return false;
+                }
+            }
+            return true;
+        };
+        if (!guardQris()) return;
+
+        // Parse Params
+        let idParam, amtParam, numId; // numId for redirect
+        try {
+            // Security: Read from sessionStorage
+            const raw = sessionStorage.getItem('post_payment_state');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                setOrderState(parsed);
+
+                // Security: Sanitize Inputs
+                // RELAXED SANITIZATION: Allow basic punctuation often used in IDs (., @, :, +)
+                const sanitize = (val) => String(val || '').substring(0, 100).replace(/[^a-zA-Z0-9\-_@.:+]/g, '') || null;
+
+                // idParam = transactionCode (for socket/polling)
+                idParam = sanitize(parsed.transactionCode || parsed.id);
+                // numId = numeric ID (for redirect)
+                numId = sanitize(parsed.orderId);
+
+                // Security: Validate Amount (Max 99jt, Positive)
+                const rawAmt = Number(parsed.subtotal || parsed.totalAmount);
+                amtParam = Math.max(0, Math.min(rawAmt || 0, 99999999));
+
+                // Security: Clean up sessionStorage to prevent replay
+                // sessionStorage.removeItem('post_payment_state'); // REMOVED: Keep state for refresh/strict-mode
+
+                // NEW: Backup for refresh resilience (Store both IDs)
+                localStorage.setItem('qris_backup', JSON.stringify({
+                    id: idParam,
+                    numericId: numId,
+                    amount: amtParam
+                }));
+            }
+
+            // Fallback: Read from localStorage if sessionStorage is empty (Refresh scenario)
+            if (!idParam || !amtParam) {
+                const backup = localStorage.getItem('qris_backup');
+                if (backup) {
+                    const b = JSON.parse(backup);
+                    if (!idParam) idParam = b.id;
+                    if (!amtParam) amtParam = b.amount;
+                    if (!numId) numId = b.numericId;
+                }
+            }
+
+            // Fallback params from URL (for deep linking)
+            // Security: Sanitize URL params too
+            if (!idParam) {
+                const urlId = searchParams.get('orderId');
+                // RELAXED SANITIZATION for URL param too
+                idParam = urlId ? String(urlId).substring(0, 100).replace(/[^a-zA-Z0-9\-_@.:+]/g, '') : null;
+            }
+
+            // Also check URL for explicit numeric ID if available (though unlikely in this flow)
+            if (!numId) {
+                const urlNumId = searchParams.get('numericId'); // Optional param
+                if (urlNumId) numId = String(urlNumId).replace(/[^0-9]/g, '');
+            }
+
             if (idParam) setOrderId(idParam);
             if (amtParam) setAmount(amtParam);
+            if (numId) numericIdRef.current = numId;
 
         } catch (e) {
-            console.error("Parse Error", e);
+            if (process.env.NODE_ENV !== 'production') console.error("Parse Error", e);
         }
 
         // Timer
@@ -59,51 +188,63 @@ export default function QrisPage() {
         // Socket.IO Listener for Webhook Updates
         const socket = io(getDynamicUrl());
         socket.on('connect', () => {
-            console.log("Socket connected for payment updates");
+            if (process.env.NODE_ENV !== 'production') console.log("Socket connected");
             if (idParam) socket.emit('join_room', idParam); // Optional if using rooms
         });
 
         socket.on('order_update', (data) => {
-            console.log("Socket Update:", data);
-            if (data.transactionCode === idParam && data.status === 'Paid') {
-                handleSuccess(idParam);
+            if (process.env.NODE_ENV !== 'production') console.log("Socket Update Received:", data);
+
+            // Robust Check: Convert both to String to avoid Type Mismatch (e.g. 123 vs "123")
+            const isMyOrder = String(data.transactionCode) === String(idParam);
+            const isPaidStatus = data.status === 'Paid' || data.status === 'completed' || data.status === 'settlement';
+
+            if (process.env.NODE_ENV !== 'production') {
+                console.log(`Checking Order: MyID=${idParam} vs DataID=${data.transactionCode} | Match=${isMyOrder} | Status=${data.status} | Paid=${isPaidStatus}`);
+            }
+
+            if (isMyOrder && isPaidStatus) {
+                // Security: Verify with backend before trusting socket event
+                if (verifyAndHandleSuccessRef.current) {
+                    verifyAndHandleSuccessRef.current(idParam);
+                }
             }
         });
 
         return () => {
             clearInterval(interval);
+            socket.off('connect'); // Cleanup listeners
+            socket.off('order_update');
             socket.disconnect();
         };
-    }, [searchParams]);
+    }, [searchParams]); // REMOVE CALLBACKS FROM DEPS to prevent loops
 
     // TIMER EXPIRY LOGIC
     useEffect(() => {
-        if (remaining === 0 && !isPaid && !isExpired && orderId) {
+        // Security: Check both visual timer and server timestamp
+        const isTimerExpired = remaining === 0 || Date.now() > serverExpiry;
+        if (isTimerExpired && !isPaid && !isExpired && orderId) {
             setIsExpired(true);
 
             // Call backend to expire
-            const expireOrder = async () => {
-                try {
-                    const API_URL = getDynamicUrl();
-                    await fetch(`${API_URL}/api/payment/expire-order`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: new URLSearchParams({ orderId: orderId })
-                    });
-                    console.log("Order expired on backend");
-                } catch (e) {
-                    console.error("Failed to expire order", e);
-                }
-            };
-            expireOrder();
+            // Safe to fire-and-forget or handle error
+            const API_URL = getDynamicUrl();
+            fetch(`${API_URL}/api/payment/expire-order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId })
+            }).catch(err => {
+                if (process.env.NODE_ENV !== 'production') console.error("Expire Error", err);
+            });
 
             // Auto redirect
             setTimeout(() => {
-                const param = encodeURIComponent(JSON.stringify(orderState || {}));
-                router.push(`/payment?state=${param}`);
+                // Security: Use sessionStorage
+                try { sessionStorage.setItem('payment_state', JSON.stringify(orderState || {})); } catch (e) { }
+                router.push('/payment');
             }, 3500);
         }
-    }, [remaining, isPaid, isExpired, orderId, orderState, router]);
+    }, [remaining, isPaid, isExpired, orderId, orderState, router, serverExpiry]);
 
     // 2. Fetch QR Code Trigger
     useEffect(() => {
@@ -112,6 +253,7 @@ export default function QrisPage() {
 
         const fetchQr = async () => {
             try {
+                setLoadingQr(true); // Ensure loading state is set
                 const API_URL = getDynamicUrl();
                 const res = await fetch(`${API_URL}/api/payment/create-transaction`, {
                     method: 'POST',
@@ -127,7 +269,7 @@ export default function QrisPage() {
                 // 1. Check if already Paid (Backend handles "Transaction already completed" check)
                 if (json.success && json.status === 'Paid') {
                     console.log("Transaction already paid!");
-                    handleSuccess(orderId);
+                    handleSuccessRef.current(orderId);
                     return;
                 }
 
@@ -138,8 +280,17 @@ export default function QrisPage() {
                         // Update amount if backend says so (e.g. fees)
                         if (json.data.amount) setAmount(json.data.amount);
                     } else if (json.data.paymentUrl) {
-                        setError("QR Code data not available (URL only).");
-                        window.location.href = json.data.paymentUrl; // Auto redirect fallback
+                        // Security: Open Redirect Protection
+                        const url = json.data.paymentUrl;
+                        // Whitelist domains (Pakasir, Midtrans, etc.)
+                        const IS_SAFE_DOMAIN = /^https:\/\/(app\.pakasir\.com|.*\.midtrans\.com|.*\.xendit\.co|.*\.doku\.com)\//i.test(url);
+
+                        if (url && IS_SAFE_DOMAIN) {
+                            window.location.href = url;
+                        } else {
+                            setError("Link pembayaran tidak valid / tidak aman.");
+                            if (process.env.NODE_ENV !== 'production') console.error("Blocked unsafe redirect:", url);
+                        }
                     }
                 } else {
                     throw new Error(json.message || "Gagal memuat QR");
@@ -153,45 +304,29 @@ export default function QrisPage() {
         };
 
         fetchQr();
-    }, [orderId, amount]);
+    }, [orderId, amount, qrValue]); // REMOVE handleSuccess
 
     // 3. Polling Backup (Just in case Webhook/Socket is delayed)
     useEffect(() => {
         if (!orderId || isPaid || !amount || isExpired) return;
 
-        const poll = setInterval(async () => {
+        const checkStatus = async () => {
             try {
                 const API_URL = getDynamicUrl();
                 const res = await fetch(`${API_URL}/api/payment/check-status/${orderId}?amount=${amount}`);
                 const json = await res.json();
 
                 if (json.status === 'Paid') {
-                    handleSuccess(orderId);
+                    handleSuccessRef.current(orderId);
                 }
             } catch (e) {
                 // Ignore polling errors
             }
-        }, 5000); // Check every 5s
+        };
 
+        let poll = setInterval(checkStatus, 5000);
         return () => clearInterval(poll);
-    }, [orderId, isPaid, amount, isExpired]);
-
-    const handleSuccess = (id) => {
-        if (isPaid || isExpired) return;
-        setIsPaid(true);
-        // Delay slightly for UX
-        setTimeout(() => {
-            // Re-construct state
-            const finalState = {
-                ...(orderState || {}),
-                status: 'paid',
-                id: id,
-                method: 'QRIS'
-            };
-            const param = encodeURIComponent(JSON.stringify(finalState));
-            router.push(`/order?state=${param}`);
-        }, 2500); // 2.5s delay to show the nice animation
-    };
+    }, [orderId, isPaid, amount, isExpired]); // REMOVE handleSuccess
 
     const formatTime = (sec) => {
         const m = String(Math.floor(sec / 60)).padStart(2, '0');
@@ -246,7 +381,7 @@ export default function QrisPage() {
             `}</style>
 
             <div className="header">
-                <button className="btn-back" onClick={() => router.back()}>
+                <button className="btn-back" onClick={() => router.push('/payment')}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
                 </button>
                 Pembayaran QRIS

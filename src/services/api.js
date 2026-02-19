@@ -186,6 +186,21 @@ export const getOrderByTransactionCode = async (code) => {
     }
 };
 
+export const getOrderById = async (id) => {
+    const API_URL = getDynamicUrl();
+    try {
+        if (process.env.NODE_ENV !== 'production') console.log("🔍 [Debug] Fetching Order by ID:", `${API_URL}/api/orders/${id}`);
+        const res = await fetch(`${API_URL}/api/orders/${id}`, { cache: 'no-store' });
+        if (!res.ok) {
+            throw new Error(`Failed to fetch order: ${res.statusText}`);
+        }
+        return await res.json();
+    } catch (error) {
+        console.error('Error fetching order by id:', error);
+        return null;
+    }
+};
+
 export const getOrdersByBatch = async (codes) => {
     const API_URL = getDynamicUrl();
     try {

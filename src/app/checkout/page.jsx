@@ -32,21 +32,62 @@ export default function CheckoutPage() {
 
     // Load state & Fetch Products
     useEffect(() => {
+        // --- SECURITY: ROUTE GUARD ---
+        const guardCheckout = () => {
+            try {
+                // Check if we have valid checkout state
+                const raw = sessionStorage.getItem('checkout_state');
+                if (!raw) {
+                    if (process.env.NODE_ENV !== 'production') console.warn("Access Denied: No checkout state");
+                    router.replace('/home'); // Use replace to prevent back-button loops
+                    return false;
+                }
+                const parsed = JSON.parse(raw);
+                if (!parsed.items || parsed.items.length === 0) {
+                    if (process.env.NODE_ENV !== 'production') console.warn("Access Denied: Empty cart");
+                    router.replace('/home');
+                    return false;
+                }
+                return true;
+            } catch (e) {
+                router.replace('/home');
+                return false;
+            }
+        };
+
+        if (!guardCheckout()) return;
+
         try {
-            const params = new URLSearchParams(window.location.search);
-            const raw = params.get('state');
+            // Security: Read from sessionStorage instead of URL to prevent manipulation
+            const raw = sessionStorage.getItem('checkout_state');
             if (raw) {
-                const parsed = JSON.parse(decodeURIComponent(raw));
-                const items = Array.isArray(parsed.items) ? parsed.items : [];
+                const parsed = JSON.parse(raw);
+                // Security: Validate & sanitize items
+                const items = (Array.isArray(parsed.items) ? parsed.items : [])
+                    .filter(it => it.id && typeof it.price === 'number' && it.price >= 0)
+                    .map(it => ({
+                        ...it,
+                        qty: Math.min(Math.max(parseInt(it.qty) || 0, 0), 99),
+                        price: Math.max(0, Number(it.price) || 0),
+                        name: String(it.name || 'Item').substring(0, 50).replace(/[<>&"']/g, ''),
+                    }));
+
                 const subtotal = parsed.subtotal ?? items.reduce((s, it) => s + (it.price || 0) * (it.qty || 0), 0);
                 setCheckoutState({ items, subtotal });
                 if (parsed.orderType) setOrderTypeState(parsed.orderType);
                 if (parsed.location) setLocation(parsed.location);
+
+                // Clean up after reading
+                // sessionStorage.removeItem('checkout_state'); // REMOVED: Keep state for refresh/strict-mode
             }
         } catch (e) { }
         try {
             const saved = localStorage.getItem('checkout_location_v1');
-            if (saved && !location) setLocation(saved);
+            // Security: Sanitize location from storage
+            if (saved && !location) {
+                const safeLocation = String(saved).substring(0, 100).replace(/[<>{}()[\]\\;`$]/g, '');
+                setLocation(safeLocation);
+            }
         } catch (e) { }
 
         const fetchRecommendations = async () => {
@@ -55,7 +96,10 @@ export default function CheckoutPage() {
                 const storedTable = localStorage.getItem('customer_table');
                 if (storedTable) {
                     const parsed = JSON.parse(storedTable);
-                    if (parsed.location?.storeId) storeId = parsed.location.storeId;
+                    // Security: Validate structure
+                    if (parsed && typeof parsed === 'object' && parsed.location?.storeId) {
+                        storeId = parseInt(parsed.location.storeId) || null;
+                    }
                 }
             } catch (e) { }
 
@@ -158,7 +202,7 @@ export default function CheckoutPage() {
             if (!it) return prev;
             const next = (it.qty || 0) + delta;
             if (next <= 0) items.splice(index, 1);
-            else items[index] = { ...it, qty: next };
+            else items[index] = { ...it, qty: Math.min(next, 99) }; // Cap at 99
             return { items, subtotal: recalcSubtotal(items) };
         });
     };
@@ -169,15 +213,15 @@ export default function CheckoutPage() {
             const items = [...prev.items];
             const existing = items.find(i => i.id === item.id);
             if (existing) {
-                existing.qty = (existing.qty || 0) + 1;
+                existing.qty = Math.min((existing.qty || 0) + 1, 99); // Cap at 99
             } else {
                 items.push({
                     id: item.id,
-                    name: item.name,
-                    price: item.price,
+                    name: String(item.name || 'Item').substring(0, 50).replace(/[<>&"']/g, ''),
+                    price: Math.max(0, Number(item.price) || 0),
                     qty: 1,
                     image: item.image || item.imgFile,
-                    category: item.category
+                    category: String(item.category || '').substring(0, 30)
                 });
             }
             return { items, subtotal: recalcSubtotal(items) };
@@ -221,8 +265,8 @@ export default function CheckoutPage() {
             const storedTable = localStorage.getItem('customer_table');
             if (storedTable) {
                 const parsed = JSON.parse(storedTable);
-                if (parsed.location && parsed.location.storeId) {
-                    storeId = parsed.location.storeId;
+                if (parsed && typeof parsed === 'object' && parsed.location?.storeId) {
+                    storeId = parseInt(parsed.location.storeId) || null;
                 }
             }
         } catch (e) { }
@@ -235,7 +279,9 @@ export default function CheckoutPage() {
             notes: notes,
             storeId: storeId
         };
-        router.push(`/payment?state=${encodeURIComponent(JSON.stringify(stateData))}`);
+        // Security: Use sessionStorage instead of URL for state transfer
+        try { sessionStorage.setItem('payment_state', JSON.stringify(stateData)); } catch (e) { }
+        router.push('/payment');
     };
 
     const formatRupiah = (num) => 'Rp ' + (num || 0).toLocaleString('id-ID');
@@ -430,7 +476,7 @@ export default function CheckoutPage() {
             <div className="checkout-container">
                 {/* 1. Header */}
                 <header className="page-header">
-                    <button className="btn-icon" onClick={() => router.back()}>
+                    <button className="btn-icon" onClick={() => router.push('/home')}>
                         <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" /></svg>
                     </button>
                     <div className="page-title">Checkout</div>
@@ -552,8 +598,13 @@ export default function CheckoutPage() {
                                 className="modal-input"
                                 rows={2}
                                 autoFocus
+                                maxLength={100}
                                 value={locationDraft}
-                                onChange={(e) => setLocationDraft(e.target.value)}
+                                onChange={(e) => {
+                                    // Security: Sanitize input
+                                    const safe = e.target.value.replace(/[<>{}()\[\]\\;`$]/g, '').substring(0, 100);
+                                    setLocationDraft(safe);
+                                }}
                                 placeholder="Jalan, Nomor Rumah, Patokan..."
                             />
                             <button className="modal-btn" onClick={saveLocationFromModal}>Simpan Lokasi</button>
@@ -569,8 +620,13 @@ export default function CheckoutPage() {
                                 className="modal-input"
                                 rows={2}
                                 autoFocus
+                                maxLength={100}
                                 value={notesDraft}
-                                onChange={(e) => setNotesDraft(e.target.value)}
+                                onChange={(e) => {
+                                    // Security: Sanitize input
+                                    const safe = e.target.value.replace(/[<>{}()\[\]\\;`$]/g, '').substring(0, 100);
+                                    setNotesDraft(safe);
+                                }}
                                 placeholder="Jangan pedas, kurang gula..."
                             />
                             <button className="modal-btn" onClick={saveNotes}>Simpan Catatan</button>
