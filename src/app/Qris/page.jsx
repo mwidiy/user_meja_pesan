@@ -51,12 +51,10 @@ export default function QrisPage() {
             sessionStorage.setItem('order_state', JSON.stringify(stateToPass));
         } catch (e) { /* ignore */ }
 
-        // Redirect to order/receipt page with Numeric ID
-        setTimeout(() => {
-            const targetId = numericIdRef.current || id;
-            if (process.env.NODE_ENV !== 'production') console.log("Redirecting to order:", targetId);
-            router.push(`/order?orderId=${targetId}`);
-        }, 2000);
+        // Redirect to order/receipt page with Numeric ID - INSTANTLY
+        const targetId = numericIdRef.current || id;
+        if (process.env.NODE_ENV !== 'production') console.log("Redirecting to order:", targetId);
+        router.push(`/order?orderId=${targetId}`);
     }, [orderState, router]);
 
     // --- VERIFY BEFORE SUCCESS (Security: don't trust socket blindly) ---
@@ -186,35 +184,48 @@ export default function QrisPage() {
         }, 1000);
 
         // Socket.IO Listener for Webhook Updates
-        const socket = io(getDynamicUrl());
+        const socket = io(getDynamicUrl(), {
+            transports: ['websocket'],
+            forceNew: true,
+            reconnectionAttempts: 5
+        });
+
         socket.on('connect', () => {
-            if (process.env.NODE_ENV !== 'production') console.log("Socket connected");
-            if (idParam) socket.emit('join_room', idParam); // Optional if using rooms
+            if (process.env.NODE_ENV !== 'production') console.log("Socket connected:", socket.id);
+            if (idParam) {
+                // Subscribe to specific transaction updates
+                socket.emit('join_room', idParam);
+            }
         });
 
         socket.on('order_update', (data) => {
             if (process.env.NODE_ENV !== 'production') console.log("Socket Update Received:", data);
 
-            // Robust Check: Convert both to String to avoid Type Mismatch (e.g. 123 vs "123")
             const isMyOrder = String(data.transactionCode) === String(idParam);
-            const isPaidStatus = data.status === 'Paid' || data.status === 'completed' || data.status === 'settlement';
-
-            if (process.env.NODE_ENV !== 'production') {
-                console.log(`Checking Order: MyID=${idParam} vs DataID=${data.transactionCode} | Match=${isMyOrder} | Status=${data.status} | Paid=${isPaidStatus}`);
-            }
+            // Check broadly for success status
+            const status = (data.status || '').toLowerCase();
+            const isPaidStatus = status === 'paid' || status === 'completed' || status === 'settlement' || status === 'success';
 
             if (isMyOrder && isPaidStatus) {
-                // Security: Verify with backend before trusting socket event
-                if (verifyAndHandleSuccessRef.current) {
-                    verifyAndHandleSuccessRef.current(idParam);
-                }
+                if (process.env.NODE_ENV !== 'production') console.log("PAYMENT SUCCESS DETECTED via Socket! Redirecting immediately...");
+
+                // TRUST THE SOCKET - INSTANT REDIRECT
+                setIsPaid(true); // Trigger UI Success
+
+                // Clear backup immediately
+                localStorage.removeItem('qris_backup');
+
+                const targetId = numericIdRef.current || idParam;
+
+                // Delay slightly just to show check mark (UX) then GO
+                setTimeout(() => {
+                    router.push(`/order?orderId=${targetId}`);
+                }, 1500);
             }
         });
 
         return () => {
             clearInterval(interval);
-            socket.off('connect'); // Cleanup listeners
-            socket.off('order_update');
             socket.disconnect();
         };
     }, [searchParams]); // REMOVE CALLBACKS FROM DEPS to prevent loops
@@ -268,7 +279,7 @@ export default function QrisPage() {
 
                 // 1. Check if already Paid (Backend handles "Transaction already completed" check)
                 if (json.success && json.status === 'Paid') {
-                    console.log("Transaction already paid!");
+                    if (process.env.NODE_ENV !== 'production') console.log("Transaction already paid!");
                     handleSuccessRef.current(orderId);
                     return;
                 }
@@ -296,7 +307,7 @@ export default function QrisPage() {
                     throw new Error(json.message || "Gagal memuat QR");
                 }
             } catch (err) {
-                console.error("QR Fetch Error:", err);
+                if (process.env.NODE_ENV !== 'production') console.error("QR Fetch Error:", err);
                 setError("Gagal memuat QR Code. Silakan coba lagi.");
             } finally {
                 setLoadingQr(false);
