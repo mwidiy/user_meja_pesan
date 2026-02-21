@@ -446,8 +446,12 @@ export default function FeedbackPage() {
                             className="textarea"
                             placeholder="Saya punya ide keren agar aplikasi ini bisa..."
                             value={feedbackText}
-                            maxLength={1000} // Security: Max Length
-                            onChange={(e) => setFeedbackText(e.target.value)}
+                            maxLength={500} // SECURITY: Max Length diketatkan ke 500
+                            onChange={(e) => {
+                                // SECURITY: Mencegah Karakter Aneh
+                                const val = e.target.value.replace(/[^a-zA-Z0-9 .,!?\-]/g, '');
+                                setFeedbackText(val);
+                            }}
                         />
                     </div>
                 </div>

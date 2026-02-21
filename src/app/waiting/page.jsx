@@ -1066,7 +1066,11 @@ export default function TrackingPage() {
                                     placeholder="Tulis alasanmu..."
                                     value={cancelReason}
                                     maxLength={200}
-                                    onChange={(e) => setCancelReason(e.target.value)} // Sanitization happens on render, but good to have length limit input
+                                    // SECURITY: Mencegah Karakter Aneh
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/[^a-zA-Z0-9 .,!?\-]/g, '');
+                                        setCancelReason(val);
+                                    }}
                                     rows={3}
                                 />
                             </div>
