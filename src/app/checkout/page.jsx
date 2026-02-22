@@ -601,8 +601,8 @@ export default function CheckoutPage() {
                                 maxLength={100}
                                 value={locationDraft}
                                 onChange={(e) => {
-                                    // Security: Sanitize input
-                                    const safe = e.target.value.replace(/[<>{}()\[\]\\;`$]/g, '').substring(0, 100);
+                                    // Security: Strict Alphanumeric + Basic Punctuation
+                                    const safe = e.target.value.replace(/[^a-zA-Z0-9 .,!?()\-]/g, '').substring(0, 100);
                                     setLocationDraft(safe);
                                 }}
                                 placeholder="Jalan, Nomor Rumah, Patokan..."
@@ -623,8 +623,8 @@ export default function CheckoutPage() {
                                 maxLength={100}
                                 value={notesDraft}
                                 onChange={(e) => {
-                                    // Security: Sanitize input
-                                    const safe = e.target.value.replace(/[<>{}()\[\]\\;`$]/g, '').substring(0, 100);
+                                    // Security: Strict Alphanumeric + Basic Punctuation
+                                    const safe = e.target.value.replace(/[^a-zA-Z0-9 .,!?()\-]/g, '').substring(0, 100);
                                     setNotesDraft(safe);
                                 }}
                                 placeholder="Jangan pedas, kurang gula..."

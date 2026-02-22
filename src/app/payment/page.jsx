@@ -159,8 +159,19 @@ export default function PaymentPage() {
 
         } catch (error) {
             if (process.env.NODE_ENV !== 'production') console.error("Payment submission failed", error);
-            // Security: Generic error message to user
-            alert("Gagal memproses pesanan. Silakan coba lagi.");
+
+            // --- SECURITY FIX: PRIORITY 1 (ANTI BYPASS QR) ---
+            // If the backend rejects the order (e.g., fake storeId/tableId injected via DevTools), 
+            // we immediately destroy their session and kick them to the landing page.
+            alert(`Pesanan ditolak oleh server: ${error.message || 'Gagal memproses pesanan'}\nSesi Anda akan direset.`);
+            try {
+                localStorage.removeItem('customer_table');
+                sessionStorage.removeItem('payment_state');
+                sessionStorage.removeItem('checkout_state');
+            } catch (e) { }
+
+            router.replace('/');
+
             setIsSubmitting(false);
             isSubmittingRef.current = false;
         }

@@ -203,7 +203,13 @@ export default function TrackingPage() {
         }
 
         // 2. Socket Setup
-        const socket = io(getDynamicUrl());
+        const socket = io(getDynamicUrl(), {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            timeout: 20000
+        });
 
         socket.on('connect', () => {
             console.log('🔌 Connected to socket for updates');

@@ -268,8 +268,11 @@ export default function HomePixelPerfect() {
         if (process.env.NODE_ENV !== 'production') console.log("🔌 Socket connecting to:", socketUrl);
 
         const socket = io(socketUrl, {
-            transports: ['websocket'],
+            transports: ['websocket', 'polling'], // Fallback for PaaS
             reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            timeout: 20000
         });
 
         const handleUpdate = (type) => {

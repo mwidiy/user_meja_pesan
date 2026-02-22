@@ -35,7 +35,13 @@ function KasirContent() {
         // We need to connect to the BACKEND URL, not PWA URL.
         // Assuming backend is at port 3000 based on previous context 
         // Ideally use env var, but hardcoding for now as per project style
-        const socket = io(getDynamicUrl());
+        const socket = io(getDynamicUrl(), {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            timeout: 20000
+        });
 
         socket.on('connect', () => {
             if (process.env.NODE_ENV !== 'production') console.log("Connected to socket for payment updates");

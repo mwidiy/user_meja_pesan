@@ -50,10 +50,11 @@ export default function TableGuard({ children }) {
         console.log("[TableGuard] Connecting socket to:", socketUrl);
 
         const socket = io(socketUrl, {
-            transports: ['websocket'],
+            transports: ['websocket', 'polling'],
             reconnection: true,
             reconnectionAttempts: Infinity,
-            reconnectionDelay: 2000,
+            reconnectionDelay: 1000,
+            timeout: 20000
         });
         socketRef.current = socket;
 

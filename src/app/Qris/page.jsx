@@ -185,9 +185,12 @@ export default function QrisPage() {
 
         // Socket.IO Listener for Webhook Updates
         const socket = io(getDynamicUrl(), {
-            transports: ['websocket'],
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            timeout: 20000,
             forceNew: true,
-            reconnectionAttempts: 5
         });
 
         socket.on('connect', () => {
